@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#101b30">
+<title>AliasPort · Local AI Gateway Manager</title>
+<style>
+:root{color-scheme:dark;--bg:#0c1424;--sidebar:#111c30;--panel:#17243a;--raised:#1c2c44;--stroke:#2a3c57;--text:#ecf2fb;--muted:#9cadc4;--primary:#7aa7f8;--accent:#72d7c5;--danger:#f58b9d;--shadow:0 16px 40px #060b1550}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.75 "Vazirmatn","Vazir",Tahoma,Arial,sans-serif}button,input,select{font:inherit}button{cursor:pointer}a{color:var(--primary)}.shell{display:grid;grid-template-columns:248px 1fr;min-height:100vh}.side{background:var(--sidebar);border-left:1px solid var(--stroke);padding:26px 17px;display:flex;flex-direction:column;gap:22px}.brand{display:flex;gap:13px;align-items:center;padding:4px 10px}.mark{width:46px;height:46px;border-radius:15px;background:linear-gradient(140deg,#6596f7,#6ce3d1);color:#09172b;display:grid;place-items:center;font-size:28px;font-weight:900;box-shadow:0 7px 22px #508cb34a}.brand b{font-size:22px;letter-spacing:.4px}.brand small{display:block;color:var(--muted);direction:ltr;text-align:right;font-size:10px;margin-top:-5px}.menu{display:flex;flex-direction:column;gap:5px}.menu button{width:100%;border:0;text-align:right;background:transparent;padding:13px 14px;color:var(--muted);border-radius:11px;transition:background .2s,color .2s}.menu button:hover{background:#ffffff0b;color:var(--text)}.menu button.active{background:#7aa7f81a;color:#c9ddff;border:1px solid #7aa7f83d}.sidefoot{margin-top:auto;color:var(--muted);font-size:11px;border-top:1px solid var(--stroke);padding:15px 9px}.main{min-width:0;padding:30px 42px 60px;max-width:1600px;width:100%;margin:auto}.topbar{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:34px}.eyebrow{font-size:11px;letter-spacing:2px;color:var(--accent);direction:ltr;text-align:right;font-weight:800}h1{font-size:28px;margin:4px 0 2px;line-height:1.4}h2{font-size:17px;margin:0 0 4px}p{margin:4px 0 12px;color:var(--muted)}.pill{display:inline-flex;gap:7px;align-items:center;padding:7px 12px;border-radius:99px;color:var(--accent);background:#72d7c514;border:1px solid #72d7c535;font-weight:650;font-size:12px}.dot{width:8px;height:8px;background:var(--accent);border-radius:50%;box-shadow:0 0 0 4px #72d7c51c}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.card{background:var(--panel);border:1px solid var(--stroke);border-radius:17px;padding:22px;box-shadow:var(--shadow);transition:border-color .15s}.card:hover{border-color:#54749f}.statlabel{color:var(--muted);font-size:12px}.number{font-size:31px;font-weight:750;font-variant-numeric:tabular-nums;direction:ltr;text-align:right;margin-top:7px;line-height:1.4}.accent{color:var(--accent)}.sectionbar{display:flex;justify-content:space-between;align-items:center;margin:28px 0 14px;gap:14px}.sectionbar p{margin:1px 0}.btn{padding:10px 17px;border-radius:10px;border:1px solid var(--stroke);background:var(--raised);color:var(--text);font-weight:650;display:inline-flex;align-items:center;gap:7px;justify-content:center}.btn:hover{filter:brightness(1.18)}.btn.primary{background:var(--primary);border-color:var(--primary);color:#0a1930}.btn.danger{border-color:#f58b9d55;color:var(--danger);background:#f58b9d0a}.btn.small{font-size:12px;padding:6px 11px}.toolbar{display:flex;gap:8px;flex-wrap:wrap}.tablewrap{overflow:auto;border:1px solid var(--stroke);border-radius:16px;background:var(--panel)}table{width:100%;border-collapse:collapse;text-align:right;white-space:nowrap}th,td{padding:16px;border-bottom:1px solid var(--stroke)}tr:last-child td{border-bottom:0}th{color:var(--muted);font-weight:650;background:#1b2a40;font-size:12px}td{font-size:13px}code,.mono{font:12px/1.9 ui-monospace,Consolas,monospace;direction:ltr;unicode-bidi:plaintext;color:#c7d8f4}.tag{padding:4px 8px;border-radius:6px;background:#739ff21d;color:#bcd3ff;display:inline-block}.tag.good{background:#72d7c51a;color:var(--accent)}.tag.bad{background:#f58b9d1a;color:var(--danger)}.muted{color:var(--muted)}.empty{padding:50px 20px;text-align:center;color:var(--muted);border:1px dashed var(--stroke);border-radius:16px;background:var(--panel)}.empty b{display:block;font-size:18px;color:var(--text);margin-bottom:4px}.split{display:grid;grid-template-columns:1.15fr .85fr;gap:20px}.instruction{background:#101d32;border:1px solid var(--stroke);border-radius:12px;padding:14px;margin:10px 0;direction:ltr;text-align:left;overflow:auto}.hidden{display:none!important}dialog{background:var(--panel);color:var(--text);border:1px solid #465d80;border-radius:18px;padding:25px;box-shadow:0 30px 90px #020812b8;width:min(530px,calc(100vw - 30px));max-height:90vh;overflow:auto}dialog::backdrop{background:#050b17bb;backdrop-filter:blur(6px)}.field{margin:16px 0}.field label{display:block;color:var(--muted);font-size:12px;margin-bottom:6px}.field input,.field select{background:#0f1a2c;border:1px solid #385071;color:var(--text);border-radius:10px;width:100%;outline:none;padding:11px 13px}.field input:focus,.field select:focus{border-color:var(--primary);box-shadow:0 0 0 3px #7aa7f821}.field small{color:var(--muted);display:block;margin-top:4px}.dialogactions{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}.token{word-break:break-all;white-space:pre-wrap;direction:ltr;text-align:left;background:#0c1627;padding:14px;border:1px dashed #72d7c5a0;border-radius:10px;font:12px/1.9 monospace;color:var(--accent)}.notice{color:#c9ddff;background:#7aa7f810;border:1px solid #7aa7f840;border-radius:12px;padding:14px 17px}.toast{position:fixed;left:25px;bottom:25px;background:#234a4c;border:1px solid #72d7c580;padding:12px 22px;border-radius:12px;box-shadow:var(--shadow);max-width:340px;z-index:99}.footer{margin-top:35px;color:var(--muted);font-size:12px;direction:ltr;text-align:center}.ltr{direction:ltr;text-align:left}@media(max-width:1100px){.grid{grid-template-columns:repeat(2,1fr)}.main{padding:24px}.split{grid-template-columns:1fr}}@media(max-width:750px){.shell{display:block}.side{padding:12px;gap:10px;border-left:0;border-bottom:1px solid var(--stroke)}.brand{padding:0}.menu{flex-direction:row;overflow:auto}.menu button{white-space:nowrap}.sidefoot{display:none}.main{padding:20px 13px}.grid{grid-template-columns:repeat(2,1fr);gap:10px}.card{padding:14px}.topbar{align-items:flex-start}.sectionbar{align-items:flex-start}.number{font-size:24px}}@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="shell">
+<aside class="side">
+ <div class="brand"><div class="mark">A</div><div><b>AliasPort</b><small>LOCAL AI GATEWAY</small></div></div>
+ <nav class="menu" id="menu">
+  <button class="active" data-page="dashboard">◈ &nbsp; نمای کلی</button>
+  <button data-page="providers">◉ &nbsp; ارائه‌دهندگان</button>
+  <button data-page="gateways">◎ &nbsp; پروفایل‌های Gateway</button>
+  <button data-page="aliases">⇄ &nbsp; قوانین Alias</button>
+  <button data-page="events">▤ &nbsp; تاریخچه درخواست‌ها</button>
+  <button data-page="settings">⚙ &nbsp; راه‌اندازی و تنظیمات</button>
+ </nav>
+ <div class="sidefoot">ALIASPORT v0.1 · LOCAL ONLY<br>Go · SQLite · Anthropic Messages</div>
+</aside>
+<main class="main">
+ <div class="topbar"><div><div class="eyebrow">CONTROL CENTER</div><h1 id="page-title">داشبورد مدیریت</h1><p id="page-sub">مدیریت متمرکز Providerها، مدل‌ها و Gatewayهای محلی</p></div><span class="pill"><span class="dot"></span> Local Gateway</span></div>
+ <section id="dashboard" class="page">
+  <div class="grid">
+   <div class="card"><div class="statlabel">ارائه‌دهندگان</div><div class="number" id="stat-providers">—</div></div>
+   <div class="card"><div class="statlabel">پروفایل‌های Gateway</div><div class="number" id="stat-gateways">—</div></div>
+   <div class="card"><div class="statlabel">قوانین Alias</div><div class="number" id="stat-aliases">—</div></div>
+   <div class="card"><div class="statlabel">Gateway فعال</div><div class="number accent" id="stat-active" style="font-size:18px">—</div></div>
+  </div>
+  <div class="sectionbar"><div><h2>راه‌اندازی سریع</h2><p>سه مرحله برای اتصال Claude Desktop به مدل‌های دلخواه</p></div></div>
+  <div class="split"><div class="card"><h2>① تعریف Provider</h2><p>آدرس ZRO و کلید API واقعی خود را ثبت کنید.</p><button class="btn primary" onclick="showPage('providers');openProvider()">افزودن Provider</button><hr style="border:0;border-top:1px solid var(--stroke);margin:24px 0"><h2>② ساخت Gateway و Alias</h2><p>برای هر پروفایل یک کلید محلی مستقل تولید می‌شود. سپس Alias مدل‌ها را تعریف کنید.</p><button class="btn" onclick="showPage('gateways');openGateway()">ساخت پروفایل Gateway</button></div>
+   <div class="card"><h2>③ اتصال Claude Desktop</h2><p>در بخش Third-party inference گزینه Gateway را انتخاب کنید.</p><div class="instruction">Base URL: http://127.0.0.1:18765</div><p>نوع احراز هویت: Bearer / Static API Key — همان کلید محلی که هنگام ساخت Gateway دریافت می‌کنید.</p><div class="notice">نام مدل‌های تعریف‌شده در Alias را در Model list برنامه Claude Desktop قرار دهید.</div></div>
+  </div>
+ </section>
+ <section id="providers" class="page hidden">
+  <div class="sectionbar"><div><h2>ارائه‌دهندگان API</h2><p>اتصال‌ها مستقل از Gateway هستند؛ یک Provider در چند پروفایل قابل استفاده است.</p></div><button class="btn primary" onclick="openProvider()">+ افزودن Provider</button></div><div id="providers-list"></div>
+ </section>
+ <section id="gateways" class="page hidden">
+  <div class="sectionbar"><div><h2>پروفایل‌های Gateway</h2><p>تنها یک پروفایل فعال است؛ تغییر آن نیازی به تغییر آدرس در Claude ندارد.</p></div><button class="btn primary" onclick="openGateway()">+ ساخت Gateway</button></div><div id="gateways-list"></div>
+ </section>
+ <section id="aliases" class="page hidden">
+  <div class="sectionbar"><div><h2>نگاشت دقیق مدل‌ها</h2><p>هر نام ورودی در هر Gateway به یک مدل و یک Provider اختصاص می‌یابد.</p></div><button class="btn primary" onclick="openAlias()">+ قانون جدید</button></div><div id="aliases-list"></div>
+ </section>
+ <section id="events" class="page hidden">
+  <div class="sectionbar"><div><h2>تاریخچه درخواست‌ها</h2><p>فقط مدل‌ها، کد پاسخ و زمان اجرا ذخیره می‌شود؛ نه متن گفتگو.</p></div><button class="btn" onclick="reload()">↻ تازه‌سازی</button></div><div id="events-list"></div>
+ </section>
+ <section id="settings" class="page hidden">
+  <div class="sectionbar"><div><h2>تنظیمات اتصال</h2><p>در این نسخه آدرس‌ها تنها روی لوپ‌بک در دسترس‌اند.</p></div></div>
+  <div class="split"><div class="card"><h2>Management UI</h2><div class="instruction">http://127.0.0.1:8787</div><h2>Anthropic API Gateway</h2><div class="instruction">http://127.0.0.1:18765</div><p>برای تغییر پورت، AliasPort.exe را با گزینه‌های <span class="mono">-admin</span> و <span class="mono">-gateway</span> اجرا کنید.</p></div><div class="card"><h2>محل داده‌ها</h2><div class="instruction">%LOCALAPPDATA%\AliasPort\aliasport.db</div><p>کلید Provider با Windows DPAPI رمزگذاری می‌شود و کلید محلی Gateway فقط به‌شکل هش ذخیره می‌شود.</p><p>برای خروج از برنامه، پردازش AliasPort.exe را متوقف کنید. بستن تب مرورگر سرویس را قطع نمی‌کند.</p></div></div>
+ </section>
+ <div class="footer">AliasPort v0.1 — Private, local-first gateway control center</div>
+</main>
+</div>
+<dialog id="editor"><form id="form"><h2 id="modal-title"></h2><div id="form-fields"></div><div class="dialogactions"><button type="button" class="btn" onclick="closeEditor()">انصراف</button><button class="btn primary" type="submit">ذخیره تغییرات</button></div></form></dialog>
+<dialog id="key-dialog"><h2>کلید دسترسی محلی Gateway</h2><p>این کلید فقط همین یک‌بار نمایش داده می‌شود. آن را در تنظیمات Claude Desktop وارد کنید.</p><div id="key-value" class="token"></div><div class="dialogactions"><button class="btn primary" onclick="copyToken()">کپی کلید</button><button class="btn" onclick="document.getElementById('key-dialog').close()">بستن</button></div></dialog>
+<div class="toast hidden" id="toast"></div>
+<script>
+const state={page:'dashboard',providers:[],gateways:[],aliases:[],events:[],overview:{}};
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+const labels={dashboard:['داشبورد مدیریت','مدیریت متمرکز Providerها، مدل‌ها و Gatewayهای محلی'],providers:['مدیریت Providerها','اتصال به سرویس‌های سازگار با Anthropic Messages API'],gateways:['مدیریت Gateway','ساخت و فعال‌کردن پروفایل‌های مستقل'],aliases:['Model Aliases','تعیین نام مدل ورودی و مقصد برای هر Gateway'],events:['گزارش درخواست‌ها','پایش وضعیت و عملکرد بدون ذخیره متن گفتگو'],settings:['تنظیمات برنامه','آدرس‌ها، داده‌های محلی و امنیت']};
+document.querySelectorAll('[data-page]').forEach(b=>b.addEventListener('click',()=>showPage(b.dataset.page)));
+function showPage(page){
+ state.page=page;
+ document.querySelectorAll('.page').forEach(x=>x.classList.toggle('hidden',x.id!==page));
+ document.querySelectorAll('[data-page]').forEach(x=>x.classList.toggle('active',x.dataset.page===page));
+ $('page-title').textContent=labels[page][0];$('page-sub').textContent=labels[page][1];
+}
+async function api(path,method='GET',body){
+ const response=await fetch('/api/'+path,{method,headers:{'Content-Type':'application/json'},body:body===undefined?(method==='GET'?undefined:'{}'):JSON.stringify(body),cache:'no-store'});
+ let out;try{out=await response.json()}catch{out={error:'پاسخ سرور نامعتبر است'}}
+ if(!response.ok)throw new Error(out.error||'خطای ناشناخته');
+ return out;
+}
+function notify(msg,error=false){const t=$('toast');t.textContent=msg;t.style.background=error?'#613044':'#234a4c';t.classList.remove('hidden');clearTimeout(window.toastTimer);window.toastTimer=setTimeout(()=>t.classList.add('hidden'),4500)}
+async function action(task){try{await task();await reload();notify('تغییرات ذخیره شد')}catch(e){notify(e.message,true)}}
+async function reload(){
+ try{
+  const [p,g,a,ev,o]=await Promise.all([api('providers'),api('gateways'),api('aliases'),api('events'),api('overview')]);
+  Object.assign(state,{providers:p,gateways:g,aliases:a,events:ev,overview:o});
+  render();
+ }catch(e){notify('عدم ارتباط با API: '+e.message,true)}
+}
+function render(){
+ $('stat-providers').textContent=state.overview.providers;
+ $('stat-gateways').textContent=state.overview.gateways;
+ $('stat-aliases').textContent=state.overview.aliases;
+ $('stat-active').textContent=state.overview.active_gateway||'تنظیم نشده';
+ const p=state.providers,g=state.gateways,a=state.aliases;
+ $('providers-list').innerHTML=p.length?table(['نام Provider','Base URL','کلید API','عملیات'],p.map(x=>[`<b>${esc(x.name)}</b>`,`<code>${esc(x.base_url)}</code>`,x.has_key?'<span class="tag good">رمزگذاری‌شده</span>':'—',`<div class="toolbar"><button class="btn small" onclick="openProvider('${x.id}')">ویرایش</button><button class="btn small danger" onclick="removeRecord('providers','${x.id}')">حذف</button></div>`])):empty('هیچ Provider ثبت نشده','ابتدا سرویس ZRO یا ارائه‌دهنده دیگری را اضافه کنید.');
+ $('gateways-list').innerHTML=g.length?table(['نام پروفایل','وضعیت','مدل‌ها','عملیات'],g.map(x=>[`<b>${esc(x.name)}</b>`,x.active?'<span class="tag good">فعال</span>':'<span class="tag">غیرفعال</span>',`<span class="mono">${a.filter(z=>z.gateway_id===x.id).length}</span>`,`<div class="toolbar">${x.active?'':`<button class="btn small primary" onclick="activateGateway('${x.id}')">فعال‌سازی</button>`}<button class="btn small" onclick="openGateway('${x.id}')">ویرایش</button><button class="btn small" onclick="rotateGateway('${x.id}')">کلید جدید</button><button class="btn small danger" onclick="removeRecord('gateways','${x.id}')">حذف</button></div>`])):empty('هنوز Gateway ندارید','یک پروفایل بسازید و کلید دسترسی محلی آن را کپی کنید.');
+ $('aliases-list').innerHTML=a.length?table(['Gateway','مدل ورودی','Provider','مدل مقصد','وضعیت','عملیات'],a.map(x=>[`<b>${esc(g.find(z=>z.id===x.gateway_id)?.name||'—')}</b>`,`<code>${esc(x.incoming)}</code>`,esc(p.find(z=>z.id===x.provider_id)?.name||'—'),`<code>${esc(x.target)}</code>`,x.enabled?'<span class="tag good">فعال</span>':'<span class="tag bad">غیرفعال</span>',`<div class="toolbar"><button class="btn small" onclick="openAlias('${x.id}')">ویرایش</button><button class="btn small danger" onclick="removeRecord('aliases','${x.id}')">حذف</button></div>`])):empty('هیچ Alias تعریف نشده','مثلاً claude-sonnet-5 را به deepseek-v4.1-flash متصل کنید.');
+ $('events-list').innerHTML=state.events.length?table(['زمان','مدل ورودی','مدل مقصد','کد پاسخ','مدت'],state.events.map(x=>[`<span class="mono">${esc(new Date(x.when).toLocaleString('fa-IR'))}</span>`,`<code>${esc(x.incoming)}</code>`,`<code>${esc(x.target)}</code>`,`<span class="tag ${x.status>=400?'bad':'good'}">${x.status}</span>`,`<span class="mono">${x.duration_ms} ms</span>`])):empty('درخواستی ثبت نشده','بعد از ارسال درخواست از Claude، اینجا نتیجه را خواهید دید.');
+}
+function table(headers,rows){return `<div class="tablewrap"><table><thead><tr>${headers.map(x=>`<th>${x}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`}
+function empty(title,description){return `<div class="empty"><b>${title}</b>${description}</div>`}
+function field(name,title,value='',extra='',hint=''){return `<div class="field"><label for="f-${name}">${title}</label><input id="f-${name}" name="${name}" value="${esc(value)}" ${extra}>${hint?`<small>${hint}</small>`:''}</div>`}
+function selectField(name,title,choices,selected){return `<div class="field"><label for="f-${name}">${title}</label><select id="f-${name}" name="${name}">${choices.map(c=>`<option value="${esc(c.id)}" ${c.id===selected?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>`}
+function modal(title,fields,submit){$('modal-title').textContent=title;$('form-fields').innerHTML=fields;$('form').onsubmit=async e=>{e.preventDefault();const values=Object.fromEntries(new FormData(e.currentTarget).entries());try{await submit(values);closeEditor();await reload();notify('ذخیره شد')}catch(err){notify(err.message,true)}};$('editor').showModal()}
+function closeEditor(){$('editor').close()}
+function openProvider(id=''){
+ const v=state.providers.find(x=>x.id===id);
+ modal(v?'ویرایش Provider':'ثبت Provider جدید',field('name','نام Provider',v?.name||'ZRO','required maxlength="120"')+field('base_url','آدرس اصلی API',v?.base_url||'https://zro.moonmath.ai','required dir="ltr"')+field('api_key',v?'کلید جدید (اختیاری)':'کلید API', '',v?'type="password" autocomplete="new-password"':'type="password" autocomplete="new-password" required','کلید در پاسخ API بازگردانده نمی‌شود و روی ویندوز رمزگذاری می‌شود.'),async values=>api('providers'+(id?'/'+id:''),id?'PUT':'POST',values));
+}
+function openGateway(id=''){
+ const v=state.gateways.find(x=>x.id===id);
+ modal(v?'ویرایش Gateway':'ساخت Gateway',field('name','نام پروفایل',v?.name||'Claude Desktop','required maxlength="120"'),async values=>{
+  const out=await api('gateways'+(id?'/'+id:''),id?'PUT':'POST',values);
+  if(out.client_key)setTimeout(()=>showKey(out.client_key),60);
+ });
+}
+function openAlias(id=''){
+ if(!state.gateways.length||!state.providers.length){notify('اول یک Gateway و Provider بسازید',true);return}
+ const v=state.aliases.find(x=>x.id===id);
+ const gs=state.gateways.map(x=>({id:x.id,name:x.name+(x.active?' (فعال)':'')}));
+ const ps=state.providers.map(x=>({id:x.id,name:x.name}));
+ const defaultGateway=v?.gateway_id||state.gateways.find(x=>x.active)?.id||gs[0].id;
+ const fields=selectField('gateway_id','Gateway',gs,defaultGateway)+selectField('provider_id','Provider مقصد',ps,v?.provider_id||ps[0].id)+field('incoming','نام دقیق مدل در Claude',v?.incoming||'claude-sonnet-5','required dir="ltr"')+field('target','مدل واقعی Provider',v?.target||'deepseek-v4.1-flash','required dir="ltr"')+`<div class="field"><label><input id="f-enabled" name="enabled" type="checkbox" style="width:auto" ${v&&!v.enabled?'':'checked'}> قانون فعال باشد</label></div>`;
+ modal(v?'ویرایش Alias':'ساخت Alias جدید',fields,async values=>api('aliases'+(id?'/'+id:''),id?'PUT':'POST',{...values,enabled:!!values.enabled}));
+}
+async function removeRecord(type,id){if(!confirm('این مورد حذف شود؟ این عملیات برگشت‌پذیر نیست.'))return;await action(()=>api(type+'/'+id,'DELETE'))}
+async function activateGateway(id){await action(()=>api('gateways/'+id+'/activate','POST'))}
+async function rotateGateway(id){if(!confirm('کلید قبلی فوراً باطل می‌شود. کلید جدید بسازیم؟'))return;try{const out=await api('gateways/'+id+'/rotate','POST');showKey(out.client_key);await reload()}catch(e){notify(e.message,true)}}
+function showKey(key){$('key-value').textContent=key;$('key-dialog').showModal()}
+async function copyToken(){try{await navigator.clipboard.writeText($('key-value').textContent);notify('کلید کپی شد')}catch{notify('کپی خودکار ممکن نیست؛ کلید را دستی کپی کنید',true)}}
+reload();
+setInterval(()=>{if(state.page==='dashboard'||state.page==='events')reload()},30000);
+</script>
+</body>
+</html>
