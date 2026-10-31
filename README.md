@@ -79,8 +79,8 @@ See [Protocol conversion and limitations](docs/PROTOCOLS.md).
 
 1. Create Gateway profiles first, then open **Providers → Add Provider** and choose **انتخاب از فهرست Providerها** to select a ready-to-use template, or enter the name, base URL, and API protocol manually.
 2. Tick one or more **allowed Gateway profiles** for that Provider, then enter the API key issued by **that Provider**. Additional or backup keys can be registered under **🔑 کلیدهای API** with ordering and billing-only rotation.
-3. Create a Gateway profile; choose its **input protocol** and **local port**. Generate a secure local client key or supply one yourself.
-4. Add an incoming model alias (such as `claude-sonnet-5` or `*`) and a real model ID supported by the selected Provider.
+3. For each Gateway, select its **input protocol**, **independent local port**, and local client key. A Provider can be enabled for more than one Gateway.
+4. Add an incoming model alias (such as `claude-sonnet-5` or `*`) **for each permitted Provider/Gateway pair**, specifying a model supported by that upstream Provider.
 5. Activate any desired Gateway profiles. They may stay active simultaneously when their ports are distinct.
 6. Configure the client to connect to `http://127.0.0.1:<gateway-port>` using the **local Gateway client key**, not the Provider key.
 
