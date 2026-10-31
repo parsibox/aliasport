@@ -126,6 +126,19 @@ func (a *App) adminAPI(w http.ResponseWriter,r *http.Request){
   id:=parts[1]
   if id==""{apiError(w,400,"missing id");return}
   switch parts[0] {
+  case "keys":
+   if len(parts)!=2||parts[1]!="bulk"{apiError(w,404,"unknown key action");return}
+   if !method(w,r,"POST"){return}
+   var payload struct{
+    Action string `json:"action"`
+    IDs []string `json:"ids"`
+   }
+   if e:=parseJSON(w,r,&payload);e!=nil{apiError(w,400,e.Error());return}
+   if payload.Action!="delete"{apiError(w,400,"bulk key action must be delete");return}
+   affected,e:=a.store.BulkDeleteProviderKeys(payload.IDs)
+   if e!=nil{writeFailure(w,e);return}
+   writeJSON(w,200,map[string]any{"action":"delete","affected":affected})
+   return
   case "providers":
    if len(parts)==3 && (parts[2]=="models" || parts[2]=="balance") {
     a.providerDiagnostic(w,r,id,parts[2]);return
