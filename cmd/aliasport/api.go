@@ -46,6 +46,26 @@ func (a *App) adminAPI(w http.ResponseWriter,r *http.Request){
  parts:=strings.Split(path,"/")
  if len(parts)==1 {
   switch parts[0] {
+  case "shutdown":
+   if !method(w,r,"POST"){return}
+   // This is a destructive local action: require the management origin and a
+   // non-simple header to prevent a cross-site form or navigation triggering it.
+   if r.Header.Get("Origin")!="http://"+r.Host ||
+      r.Header.Get("X-AliasPort-Action")!="shutdown" ||
+      !isLoopbackAddr(r.Host) {
+    apiError(w,403,"shutdown must be requested from the local management UI")
+    return
+   }
+   var payload struct{Confirm string `json:"confirm"`}
+   if e:=parseJSON(w,r,&payload);e!=nil{apiError(w,400,e.Error());return}
+   if payload.Confirm!="shutdown"{apiError(w,400,"explicit shutdown confirmation required");return}
+   if a.stopCh==nil {apiError(w,503,"shutdown is unavailable");return}
+   a.stopOnce.Do(func(){
+    // Give the browser a brief opportunity to receive the acknowledgement.
+    time.AfterFunc(250*time.Millisecond,func(){close(a.stopCh)})
+   })
+   writeJSON(w,200,map[string]any{"accepted":true,"message":"AliasPort will stop immediately"})
+   return
   case "overview":
    if !method(w,r,"GET"){return}
    providers,e1:=a.store.Providers()
