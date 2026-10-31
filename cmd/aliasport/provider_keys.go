@@ -58,12 +58,15 @@ func (s *Store) migrateProviderKeys()error {
  for _,p:=range existing {
   var count int
   if err=tx.QueryRow("SELECT COUNT(*) FROM provider_keys WHERE provider_id=?",p.id).Scan(&count);err!=nil{return err}
-  if count!=0{continue}
-  plain,e:=openSecret(p.secret)
-  if e!=nil{return fmt.Errorf("cannot migrate provider %s credentials: %w",p.id,e)}
-  _,err=tx.Exec(`INSERT INTO provider_keys(id,provider_id,label,secret,fingerprint,priority,enabled,status)
-     VALUES(?,?,?,?,?,0,1,'ready')`,newID(),p.id,"Primary (migrated)",p.secret,secretFingerprint(plain))
-  if err!=nil{return err}
+  if count==0 {
+   plain,e:=openSecret(p.secret)
+   if e!=nil{return fmt.Errorf("cannot migrate provider %s credentials: %w",p.id,e)}
+   _,err=tx.Exec(`INSERT INTO provider_keys(id,provider_id,label,secret,fingerprint,priority,enabled,status)
+      VALUES(?,?,?,?,?,0,1,'ready')`,newID(),p.id,"Primary (migrated)",p.secret,secretFingerprint(plain))
+   if err!=nil{return err}
+  }
+  // Remove the obsolete duplicate credential once safely migrated.
+  if _,err=tx.Exec("UPDATE providers SET secret=X'' WHERE id=?",p.id);err!=nil{return err}
  }
  if _,err=tx.Exec("PRAGMA user_version=1");err!=nil{return err}
  return tx.Commit()
