@@ -198,7 +198,7 @@ function render(){
   '<label title="انتخاب همه Aliasها"><input id="alias-select-all" type="checkbox" class="alias-select-checkbox" aria-label="انتخاب همه Aliasها" onchange="toggleAllAliases(this.checked)"></label>',
   'Gateway','مدل ورودی (دقیق یا *)','Provider','مدل مقصد','وضعیت','عملیات'
  ],a.map(x=>[
-  `<input type="checkbox" class="alias-select-checkbox alias-select" aria-label="انتخاب ${esc(x.incoming)}" onchange="toggleAliasSelection('${x.id}',this.checked)" ${selectedAliasIds.has(x.id)?'checked':''}>`,
+  `<input type="checkbox" class="alias-select-checkbox alias-select" data-alias-id="${x.id}" aria-label="انتخاب ${esc(x.incoming)}" onchange="toggleAliasSelection('${x.id}',this.checked)" ${selectedAliasIds.has(x.id)?'checked':''}>`,
   `<b>${esc(g.find(z=>z.id===x.gateway_id)?.name||'—')}</b>`,
   `<code>${esc(x.incoming)}</code>${x.incoming==='*'?' <span class="tag good">همه مدل‌ها</span>':''}`,
   esc(p.find(z=>z.id===x.provider_id)?.name||'—'),
@@ -496,7 +496,7 @@ function toggleAliasSelection(id,checked){
  const boxes=Array.from(document.querySelectorAll('#aliases-list .alias-select'));
  const alias=state.aliases.find(a=>a.id===id);
  if(alias){
-  const item=boxes.find(box=>box.getAttribute('onchange')==="toggleAliasSelection('"+id+"',this.checked)");
+  const item=boxes.find(box=>box.dataset.aliasId===id);
   if(item)item.closest('tr')?.classList.toggle('alias-row-selected',checked);
  }
  refreshAliasBulkToolbar();
@@ -536,6 +536,7 @@ async function bulkAliasOperation(action){
  if(aliasBulkBusy||!['enable','disable','delete'].includes(action))return;
  const ids=Array.from(selectedAliasIds);
  if(ids.length===0){notify('ابتدا Aliasهای موردنظر را انتخاب کنید',true);return}
+ if(ids.length>5000){notify('حداکثر ۵۰۰۰ قانون در هر عملیات قابل انتخاب است',true);return}
  if(action==='delete'&&!confirm('آیا از حذف دائمی '+ids.length+' قانون Alias انتخاب‌شده مطمئن هستید؟ این عملیات برگشت‌پذیر نیست.'))return;
  aliasBulkBusy=true;
  refreshAliasBulkToolbar();
