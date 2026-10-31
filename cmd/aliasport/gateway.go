@@ -106,7 +106,7 @@ func(a *App)handleGateway(w http.ResponseWriter,r *http.Request,inputType string
  outgoing,err:=json.Marshal(payload)
  if err!=nil{status=400;apiError(w,status,"unable to encode message");return}
  path:="/v1/messages"
- if inputType==ProtocolOpenAIChat || (!countTokens&&route.ProviderType==ProtocolOpenAIChat){path="/v1/chat/completions"}
+ if !countTokens&&route.ProviderType==ProtocolOpenAIChat{path="/v1/chat/completions"}
  if countTokens{path="/v1/messages/count_tokens"}
  url,err:=providerEndpoint(route.BaseURL,route.ProviderType,path)
  if err!=nil{status=502;apiError(w,status,"invalid provider endpoint");return}
