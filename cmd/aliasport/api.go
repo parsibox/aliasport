@@ -74,7 +74,9 @@ func (a *App) adminAPI(w http.ResponseWriter,r *http.Request){
    if e1!=nil||e2!=nil||e3!=nil{apiError(w,500,"database unavailable");return}
    active:=""
    for _,g:=range gateways{if g.Active{active=g.Name;break}}
-   writeJSON(w,200,map[string]any{"providers":len(providers),"gateways":len(gateways),"aliases":len(aliases),"active_gateway":active,"uptime_seconds":int(time.Since(a.started).Seconds()),"gateway_url":"http://"+a.gatewayPort})
+   gatewayURL:=""
+   for _,g:=range gateways{if g.Active{gatewayURL=fmt.Sprintf("http://127.0.0.1:%d",g.Port);break}}
+   writeJSON(w,200,map[string]any{"providers":len(providers),"gateways":len(gateways),"aliases":len(aliases),"active_gateway":active,"uptime_seconds":int(time.Since(a.started).Seconds()),"gateway_url":gatewayURL})
    return
   case "events":
    if !method(w,r,"GET"){return}
@@ -183,8 +185,15 @@ func (a *App) adminAPI(w http.ResponseWriter,r *http.Request){
   case "gateways":
    if len(parts)==3&&parts[2]=="activate" {
     if !method(w,r,"POST"){return}
-    if e:=a.store.ActivateGateway(id);e!=nil{writeFailure(w,e);return}
+    if a.proxy==nil{apiError(w,503,"gateway manager unavailable");return}
+    if e:=a.proxy.switchTo(id);e!=nil{writeFailure(w,e);return}
     writeJSON(w,200,map[string]any{"activated":id});return
+   }
+   if len(parts)==3&&parts[2]=="deactivate" {
+    if !method(w,r,"POST"){return}
+    if a.proxy==nil{apiError(w,503,"gateway manager unavailable");return}
+    if e:=a.proxy.deactivate(id);e!=nil{writeFailure(w,e);return}
+    writeJSON(w,200,map[string]any{"deactivated":id});return
    }
    if len(parts)==3&&parts[2]=="rotate" {
     if !method(w,r,"POST"){return}
@@ -199,10 +208,12 @@ func (a *App) adminAPI(w http.ResponseWriter,r *http.Request){
     var v Gateway
     if e:=parseJSON(w,r,&v);e!=nil{apiError(w,400,e.Error());return}
     v.ID=id
-    saved,e:=a.store.SaveGateway(v);if e!=nil{writeFailure(w,e);return}
+    if a.proxy==nil{apiError(w,503,"gateway manager unavailable");return}
+    saved,e:=a.proxy.updateGateway(v);if e!=nil{writeFailure(w,e);return}
     writeJSON(w,200,saved);return
    case "DELETE":
-    if e:=a.store.DeleteGateway(id);e!=nil{writeFailure(w,e);return}
+    if a.proxy==nil{apiError(w,503,"gateway manager unavailable");return}
+    if e:=a.proxy.removeGateway(id);e!=nil{writeFailure(w,e);return}
     writeJSON(w,200,map[string]bool{"deleted":true});return
    }
    method(w,r,"PUT","DELETE");return
