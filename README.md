@@ -18,6 +18,27 @@ Gateway proxy: configurable for each Gateway profile (port 18765 on migrated pro
 
 The browser opens automatically. The built Windows executable uses `-H windowsgui` and opens no console window.
 
+### Build, stop running instance, and restart automatically
+
+Run `build.bat` from CMD or `.\build.bat` in PowerShell. The build now performs the full safe cycle:
+
+1. Check `http://127.0.0.1:8787/health` to determine whether AliasPort is running. A non-AliasPort service on that port causes the build to **stop safely**, not kill the process.
+2. If AliasPort is running, submit a confirmed same-origin `POST /api/shutdown` with `{"confirm":"shutdown"}` and `X-AliasPort-Action: shutdown`. Wait for both the management and active Gateway proxy ports to close.
+3. Resolve dependencies, regenerate the icon, run all Go tests and build `dist\AliasPort.exe`.
+4. **Only after a successful build**, launch the new EXE and verify that the management health endpoint responds.
+
+No `taskkill` is used, and the script never terminates unrelated processes. If stopping, tests or compilation fail, the build aborts; it does not restart the old executable automatically. Your SQLite configuration and encrypted keys are preserved.
+
+The shutdown endpoint is **already implemented** and is the same one used by the **بستن برنامه** button. It accepts only a confirmed local JSON POST with the correct `Origin` and `X-AliasPort-Action` header.
+
+**Options:**
+- `set ALIASPORT_NO_START=1` before running `build.bat` to build without launching the resulting EXE.
+- Builds inside CI skip automatic launch.
+- For a nondefault management port, set `ALIASPORT_ADMIN_URL=http://127.0.0.1:8899` (using the actual address on which the running instance listens); that same address is passed to the rebuilt EXE.
+- The shutdown/start helper lives at [`scripts/build-runtime.ps1`](scripts/build-runtime.ps1) and uses Windows PowerShell, which is available on supported Windows installations.
+
+See [Build and restart workflow](docs/BUILD_AND_RESTART.md) for manual shutdown commands and troubleshooting.
+
 ### Custom Windows icon
 
 AliasPort includes its own blue/violet **A + gateway** app icon, stored as editable vector artwork at [`assets/aliasport.svg`](assets/aliasport.svg).
