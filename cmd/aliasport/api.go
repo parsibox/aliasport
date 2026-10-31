@@ -221,6 +221,18 @@ func (a *App) adminAPI(w http.ResponseWriter,r *http.Request){
    }
    method(w,r,"PUT","DELETE");return
   case "aliases":
+   if len(parts)==2 && parts[1]=="bulk" {
+    if !method(w,r,"POST"){return}
+    var request struct{
+     Action string `json:"action"`
+     IDs []string `json:"ids"`
+    }
+    if e:=parseJSON(w,r,&request);e!=nil{apiError(w,400,e.Error());return}
+    updated,e:=a.store.BulkAliases(request.Action,request.IDs)
+    if e!=nil{writeFailure(w,e);return}
+    writeJSON(w,200,map[string]any{"action":request.Action,"affected":updated})
+    return
+   }
    if len(parts)!=2{apiError(w,404,"unknown action");return}
    switch r.Method{
    case "PUT":
