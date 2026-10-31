@@ -102,6 +102,16 @@ The backing `POST /api/aliases/bulk` API accepts a JSON body with `action` (`ena
 
 See [bulk alias operations](docs/BULK_ALIASES.md).
 
+### Search filters and bulk API-key deletion
+
+The management UI now includes search controls for **Providers, Gateway profiles, API Keys, Model Aliases, and request history**. The API Keys list supports filtering by Provider; the Model Aliases list supports filtering by **Provider, Gateway, and enabled status**. Search runs against the current locally loaded data, with no additional upstream requests. Select-all applies only to **visible filtered rows**, and changing a filter clears the current bulk selection.
+
+On each Provider row, **Create API Key** opens the key editor with that Provider selected; **Create Alias** opens the Alias editor with its target Provider selected; **View Aliases** jumps directly to the Alias list filtered to that Provider.
+
+API Keys now have row-selection checkboxes, select-all and **Bulk Delete**, using `POST /api/keys/bulk` with `{"action":"delete","ids":["..."]}`. The backend validates 1–5000 unique IDs and removes them in one SQLite transaction, rolling back completely on missing/invalid IDs. Deletion requires confirmation in the UI and never deletes the Provider itself. Removing the last key for a Provider makes it unusable until another key is added.
+
+See [search and bulk API-key operations](docs/SEARCH_AND_BULK_KEYS.md).
+
 `GET /v1/models` and `POST /v1/messages` are supported; requests can stream. The gateway also forwards `POST /v1/messages/count_tokens` for upstreams that implement it.
 
 ## Security
