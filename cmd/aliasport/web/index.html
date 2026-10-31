@@ -73,7 +73,7 @@
   <div id="model-filters" class="picker-filters" role="group" aria-label="فیلتر خانواده مدل"></div>
  </div>
  <div id="model-results" class="picker-content"></div>
- <div class="picker-foot">فهرست از مستندات Anthropic تهیه شده است؛ مدل‌های قدیمی ممکن است دیگر در API قابل استفاده نباشند. <a href="https://platform.claude.com/docs/en/models/overview" target="_blank" rel="noopener noreferrer">فهرست رسمی مدل‌ها</a></div>
+ <div class="picker-foot">گزینه «همه مدل‌ها (*)» یک قانون داخلی AliasPort است، نه مدل Anthropic. مدل‌های قدیمی ممکن است دیگر در API قابل استفاده نباشند. <a href="https://platform.claude.com/docs/en/models/overview" target="_blank" rel="noopener noreferrer">فهرست رسمی مدل‌ها</a></div>
 </dialog>
 <dialog id="key-dialog"><h2>کلید دسترسی محلی Gateway</h2><p>این کلید فقط همین یک‌بار نمایش داده می‌شود. آن را در تنظیمات Claude Desktop وارد کنید.</p><div id="key-value" class="token"></div><div class="dialogactions"><button class="btn primary" onclick="copyToken()">کپی کلید</button><button class="btn" onclick="document.getElementById('key-dialog').close()">بستن</button></div></dialog>
 <div class="toast hidden" id="toast"></div>
@@ -118,7 +118,7 @@ function render(){
   return [label,`<b>${esc(k.label)}</b>`,`<code>${esc(k.fingerprint)}</code>`,`<span class="mono">${k.priority}</span>`,st,`<span class="mono">${k.last_used_at?esc(new Date(k.last_used_at).toLocaleString('fa-IR')):'—'}</span>`,`<div class="toolbar">${k.status==='billing_blocked'?`<button class="btn small primary" onclick="resetProviderKey('${k.provider_id}','${k.id}')">بازنشانی Billing</button>`:''}<button class="btn small" onclick="openProviderKey('${k.id}')">ویرایش</button><button class="btn small danger" onclick="deleteProviderKey('${k.provider_id}','${k.id}')">حذف</button></div>`];
  })):empty('هنوز کلیدی ثبت نشده','یک کلید از حساب Provider دریافت و به برنامه اضافه کنید.');
  $('gateways-list').innerHTML=g.length?table(['نام پروفایل','وضعیت','مدل‌ها','عملیات'],g.map(x=>[`<b>${esc(x.name)}</b>`,x.active?'<span class="tag good">فعال</span>':'<span class="tag">غیرفعال</span>',`<span class="mono">${a.filter(z=>z.gateway_id===x.id).length}</span>`,`<div class="toolbar">${x.active?'':`<button class="btn small primary" onclick="activateGateway('${x.id}')">فعال‌سازی</button>`}<button class="btn small" onclick="openGateway('${x.id}')">ویرایش</button><button class="btn small" onclick="rotateGateway('${x.id}')">کلید جدید</button><button class="btn small danger" onclick="removeRecord('gateways','${x.id}')">حذف</button></div>`])):empty('هنوز Gateway ندارید','یک پروفایل بسازید و کلید دسترسی محلی آن را کپی کنید.');
- $('aliases-list').innerHTML=a.length?table(['Gateway','مدل ورودی','Provider','مدل مقصد','وضعیت','عملیات'],a.map(x=>[`<b>${esc(g.find(z=>z.id===x.gateway_id)?.name||'—')}</b>`,`<code>${esc(x.incoming)}</code>`,esc(p.find(z=>z.id===x.provider_id)?.name||'—'),`<code>${esc(x.target)}</code>`,x.enabled?'<span class="tag good">فعال</span>':'<span class="tag bad">غیرفعال</span>',`<div class="toolbar"><button class="btn small" onclick="openAlias('${x.id}')">ویرایش</button><button class="btn small danger" onclick="removeRecord('aliases','${x.id}')">حذف</button></div>`])):empty('هیچ Alias تعریف نشده','مثلاً claude-sonnet-5 را به deepseek-v4.1-flash متصل کنید.');
+ $('aliases-list').innerHTML=a.length?table(['Gateway','مدل ورودی (دقیق یا *)','Provider','مدل مقصد','وضعیت','عملیات'],a.map(x=>[`<b>${esc(g.find(z=>z.id===x.gateway_id)?.name||'—')}</b>`,`<code>${esc(x.incoming)}</code>${x.incoming==='*'?' <span class="tag good">همه مدل‌ها</span>':''}`,esc(p.find(z=>z.id===x.provider_id)?.name||'—'),`<code>${esc(x.target)}</code>`,x.enabled?'<span class="tag good">فعال</span>':'<span class="tag bad">غیرفعال</span>',`<div class="toolbar"><button class="btn small" onclick="openAlias('${x.id}')">ویرایش</button><button class="btn small danger" onclick="removeRecord('aliases','${x.id}')">حذف</button></div>`])):empty('هیچ Alias تعریف نشده','مثلاً claude-sonnet-5 را به deepseek-v4.1-flash متصل کنید.');
  $('events-list').innerHTML=state.events.length?table(['زمان','مدل ورودی','مدل مقصد','کد پاسخ','مدت'],state.events.map(x=>[`<span class="mono">${esc(new Date(x.when).toLocaleString('fa-IR'))}</span>`,`<code>${esc(x.incoming)}</code>`,`<code>${esc(x.target)}</code>`,`<span class="tag ${x.status>=400?'bad':'good'}">${x.status}</span>`,`<span class="mono">${x.duration_ms} ms</span>`])):empty('درخواستی ثبت نشده','بعد از ارسال درخواست از Claude، اینجا نتیجه را خواهید دید.');
 }
 function table(headers,rows){return `<div class="tablewrap"><table><thead><tr>${headers.map(x=>`<th>${x}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`}
@@ -143,6 +143,7 @@ function openGateway(id=''){
    The list is a convenience preset and never overrides user-entered IDs.
    Source: https://platform.claude.com/docs/en/about-claude/model-deprecations */
 const claudeModelCatalog=[
+ {id:'*',name:'همه مدل‌ها (قانون پیش‌فرض)',family:'wildcard',fallback:true},
  {id:'claude-opus-5-5',name:'Claude Opus 5.5',family:'opus'},
  {id:'claude-opus-5',name:'Claude Opus 5',family:'opus'},
  {id:'claude-opus-4-8',name:'Claude Opus 4.8',family:'opus'},
@@ -170,7 +171,7 @@ function incomingModelField(value){
  '<input id="f-incoming" name="incoming" value="'+esc(value)+'" required maxlength="200" dir="ltr" autocomplete="off" spellcheck="false" aria-describedby="model-select-help">'+
  '<button type="button" class="model-picker-trigger" onclick="openModelPicker()" title="انتخاب از فهرست مدل‌های Claude" aria-label="نمایش فهرست مدل‌های Claude" aria-haspopup="dialog">'+
  '<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>'+
- '</button></div><small id="model-select-help">مدل را دستی وارد کنید یا با آیکون کناری انتخاب کنید.</small></div>';
+ '</button></div><small id="model-select-help">نام دقیق مدل را وارد کنید؛ یا * بزنید تا تمام مدل‌های بدون قانون اختصاصی به مدل مقصد هدایت شوند. قانون دقیق همیشه مقدم است.</small></div>';
 }
 function openModelPicker(){
  if(!$('editor').open || !$('f-incoming'))return;
@@ -194,7 +195,7 @@ function selectClaudeModel(id){
  input.focus();
 }
 function renderModelPicker(){
- const filterLabels=[['all','همه'],['opus','Opus'],['sonnet','Sonnet'],['haiku','Haiku'],['other','سایر']];
+ const filterLabels=[['all','همه'],['wildcard','همه مدل‌ها (*)'],['opus','Opus'],['sonnet','Sonnet'],['haiku','Haiku'],['other','سایر']];
  const filters=$('model-filters');filters.replaceChildren();
  filterLabels.forEach(([value,label])=>{
   const btn=document.createElement('button');
@@ -222,7 +223,7 @@ function renderModelPicker(){
   const id=document.createElement('span');id.className='model-id';id.textContent=m.id;
   details.append(heading,id);
   const chip=document.createElement('span');chip.className='picker-chip'+(m.older?' older':'');
-  chip.textContent=m.older?'قدیمی':'انتخاب';
+  chip.textContent=m.fallback?'پیش‌فرض':m.older?'قدیمی':'انتخاب';
   btn.append(details,chip);
   btn.addEventListener('click',()=>selectClaudeModel(m.id));
   container.append(btn);
