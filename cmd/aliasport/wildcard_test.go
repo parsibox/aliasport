@@ -95,5 +95,11 @@ func TestWildcardScopedToActiveGateway(t *testing.T) {
  route,err:=store.RouteFor("any-unknown-model")
  if err!=nil || route.Target!="only-one" {t.Fatalf("active profile one should match: %+v %v",route,err)}
  if err=store.ActivateGateway(g2.ID);err!=nil{t.Fatal(err)}
- if _,err=store.RouteFor("any-unknown-model");err!=ErrNotFound{t.Fatalf("wildcard leaked from inactive profile: %v",err)}
+ if _,err=store.RoutesForGateway(g2.ID,"any-unknown-model");err!=ErrNotFound{
+  t.Fatalf("wildcard leaked to Gateway without assignment: %v",err)
+ }
+ first,err:=store.RoutesForGateway(g1.ID,"any-unknown-model")
+ if err!=nil||len(first)!=1||first[0].Target!="only-one"{
+  t.Fatalf("first Gateway wildcard stopped working: %+v %v",first,err)
+ }
 }
