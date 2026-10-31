@@ -7,6 +7,9 @@ import (
  "net"
  "net/http"
  "net/http/httptest"
+ "os"
+ "path/filepath"
+ "strconv"
  "strings"
  "sync"
  "testing"
@@ -75,10 +78,21 @@ func TestStopClosesBothListeners(t *testing.T){
  adminAddress:=freeLoopbackAddress(t)
  gatewayAddress:=freeLoopbackAddress(t)
  for gatewayAddress==adminAddress{gatewayAddress=freeLoopbackAddress(t)}
+ _,gatewayPortText,err:=net.SplitHostPort(gatewayAddress)
+ if err!=nil{t.Fatal(err)}
+ gatewayPort,err:=strconv.Atoi(gatewayPortText)
+ if err!=nil{t.Fatal(err)}
+ dataPath:=filepath.Join(root,"AliasPort","aliasport.db")
+ if err=os.MkdirAll(filepath.Dir(dataPath),0700);err!=nil{t.Fatal(err)}
+ store,err:=OpenStore(dataPath)
+ if err!=nil{t.Fatal(err)}
+ gateway,err:=store.SaveGateway(Gateway{Name:"Shutdown Test",Port:gatewayPort,InputType:ProtocolAnthropic})
+ if err!=nil{t.Fatal(err)}
+ if err=store.ActivateGateway(gateway.ID);err!=nil{t.Fatal(err)}
+ if err=store.Close();err!=nil{t.Fatal(err)}
 
  result:=make(chan error,1)
- go func(){result<-run(adminAddress,gatewayAddress,false)}()
-
+ go func(){result<-run(adminAddress,false)}()
  client:=&http.Client{Timeout:500*time.Millisecond}
  ready:=false
  for i:=0;i<200;i++{
@@ -87,7 +101,7 @@ func TestStopClosesBothListeners(t *testing.T){
   default:
   }
   response,err:=client.Get("http://"+adminAddress+"/health")
-  if err==nil {
+  if err==nil{
    _,_=io.Copy(io.Discard,response.Body)
    _=response.Body.Close()
    if response.StatusCode==200{ready=true;break}
@@ -95,12 +109,10 @@ func TestStopClosesBothListeners(t *testing.T){
   time.Sleep(10*time.Millisecond)
  }
  if !ready{t.Fatal("admin listener did not start")}
-
  gatewayResp,err:=client.Get("http://"+gatewayAddress+"/health")
  if err!=nil{t.Fatalf("gateway did not start: %v",err)}
  _=gatewayResp.Body.Close()
  if gatewayResp.StatusCode!=200{t.Fatalf("gateway health code %d",gatewayResp.StatusCode)}
-
  raw,_:=json.Marshal(map[string]string{"confirm":"shutdown"})
  req,err:=http.NewRequest("POST","http://"+adminAddress+"/api/shutdown",bytes.NewReader(raw))
  if err!=nil{t.Fatal(err)}
@@ -112,7 +124,6 @@ func TestStopClosesBothListeners(t *testing.T){
  _,_=io.Copy(io.Discard,response.Body)
  _=response.Body.Close()
  if response.StatusCode!=200{t.Fatalf("shutdown returned %d",response.StatusCode)}
-
  select{
  case err=<-result:
   if err!=nil{t.Fatalf("run returned an error: %v",err)}
