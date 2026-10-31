@@ -16,6 +16,7 @@ func TestBillingClassification(t *testing.T){
  tests:=[]struct{status int;body string;want bool}{
   {402,"payment required",true},
   {403,`{"error":{"type":"billing_issue","message":"Account billing issue"}}`,true},
+  {403,`{"error":"Billing issue"}`,true},
   {429,`{"error":{"code":"insufficient_quota","message":"insufficient credits"}}`,true},
   {400,`{"error":{"message":"Credit balance is too low"}}`,true},
   {429,`{"error":{"type":"rate_limit_error","message":"Too many requests"}}`,false},
@@ -105,6 +106,8 @@ func TestRateLimitDoesNotRotateCredentials(t *testing.T){
 
 func TestProviderKeyPersistenceAndNoResurrection(t *testing.T){
  root:=t.TempDir()
+ t.Setenv("XDG_CONFIG_HOME",root)
+ t.Setenv("LOCALAPPDATA",root)
  path:=filepath.Join(root,"keys.db")
  s,e:=OpenStore(path);if e!=nil{t.Fatal(e)}
  p,e:=s.SaveProvider(Provider{Name:"P",BaseURL:"https://example.com",APIKey:"original-secret"})
