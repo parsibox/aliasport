@@ -15,6 +15,7 @@ import (
  "path/filepath"
  "runtime"
  "strings"
+ "sync"
  "syscall"
  "time"
 )
@@ -28,6 +29,8 @@ type App struct {
  gatewayPort string
  adminPort string
  client *http.Client
+ stopCh chan struct{}
+ stopOnce sync.Once
 }
 
 func main() {
@@ -75,7 +78,7 @@ func run(adminAddr,gatewayAddr string,launchBrowser bool) error {
  app:=&App{store:store,started:time.Now(),adminPort:adminAddr,gatewayPort:gatewayAddr,client:&http.Client{
   Transport:transport,
   CheckRedirect:func(_ *http.Request,_ []*http.Request)error{return http.ErrUseLastResponse},
- }}
+ },stopCh:make(chan struct{})}
  adminMux:=http.NewServeMux()
  staticFS,err:=fs.Sub(webAssets,"web");if err!=nil{return err}
  adminMux.Handle("/",http.FileServer(http.FS(staticFS)))
@@ -120,6 +123,13 @@ func run(adminAddr,gatewayAddr string,launchBrowser bool) error {
  case err=<-errorsCh:
  case <-sig:
   err=nil
+ case <-app.stopCh:
+  // The user explicitly requested full exit. Close both listeners and all
+  // active connections (including long-running SSE) immediately, then return
+  // from run so main exits and the SQLite store closes.
+  _=adminServer.Close()
+  _=gatewayServer.Close()
+  return nil
  }
  ctx,cancel:=context.WithTimeout(context.Background(),15*time.Second)
  defer cancel()
