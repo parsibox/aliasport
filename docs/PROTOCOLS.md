@@ -1,6 +1,6 @@
 # Gateway and Provider Protocol Conversion
 
-AliasPort keeps **Gateway input protocol** separate from **Provider upstream protocol**. Each Gateway profile stores its own local listening port. Exactly one gateway profile is active at a time, maintaining compatibility with the original activation model.
+AliasPort keeps **Gateway input protocol** separate from **Provider upstream protocol**. Each Gateway profile stores its own local listening port. Multiple Gateway profiles can be active concurrently, each with a separate local port and client key. A Provider may belong to multiple Gateways, but each Gateway routes only through explicitly associated Providers and its own aliases.
 
 ## Supported protocols
 
@@ -43,12 +43,12 @@ OpenAI SDKs call `POST /v1/chat/completions`, and AliasPort converts to upstream
 ## Per-profile proxy ports
 
 - Each gateway has editable **Input Protocol** and **Proxy Port** fields. The settings page no longer contains a global proxy port.
-- Startup listens **only** on the active profile's port.
-- Clicking **Run** activates that profile and binds the selected port. A blocked port produces an error without changing the active profile.
-- Clicking **Stop Proxy** deactivates the current profile without closing the management UI.
+- Startup listens on **all active Gateway profiles' ports**.
+- Clicking **Run** starts that Gateway without stopping others. An occupied port produces an error without changing any running Gateway.
+- Clicking **Stop Proxy** stops only the selected Gateway without closing the management UI or other Gateway listeners.
 - Editing an active profile's port acquires the replacement port before switching over. The previous listener stops accepting new connections; in-flight SSE requests are allowed a bounded graceful shutdown.
 - Management UI remains on `127.0.0.1:8787` by default and is configured separately via the `-admin` CLI flag.
-- Existing databases migrate automatically: Anthropic protocol and port `18765` are the defaults, preserving the original profile behavior.
+- Existing databases migrate automatically: Anthropic protocol and port `18765` remain defaults, and old Provider/Gateway associations are preserved from their Aliases.
 
 ## Conversion capabilities and limitations
 
