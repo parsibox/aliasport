@@ -94,6 +94,14 @@ When an upstream key receives a verified billing error, it is quarantined and th
 
 Model aliases also support an incoming ID of `*`, which acts as a **catch-all fallback** within the active gateway. Exact, enabled model aliases always take precedence. The UI model picker includes **همه مدل‌ها (*)** for one-click selection. See [Wildcard model aliases](docs/WILDCARD_ALIASES.md).
 
+### Bulk Model Alias operations
+
+On the **Model Aliases** page, select individual mappings using row checkboxes or use the table-header checkbox to select all displayed mappings. The selection counter and three actions let you **enable, disable, or delete** the selected aliases. Bulk deletion always requests confirmation. Successful operations clear the selection and refresh the dashboard.
+
+The backing `POST /api/aliases/bulk` API accepts a JSON body with `action` (`enable`, `disable`, or `delete`) and `ids` (1–5000 unique alias IDs). Every ID must belong to an existing Alias, and the entire batch is validated and committed in a **single SQLite transaction**. A missing ID, duplicate ID, or malformed payload makes the whole operation fail without changing other aliases. Changes can span multiple Gateway profiles only when their specific aliases are selected; nonselected aliases remain untouched.
+
+See [bulk alias operations](docs/BULK_ALIASES.md).
+
 `GET /v1/models` and `POST /v1/messages` are supported; requests can stream. The gateway also forwards `POST /v1/messages/count_tokens` for upstreams that implement it.
 
 ## Security
