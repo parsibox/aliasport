@@ -105,6 +105,47 @@ func (a *App) adminAPI(w http.ResponseWriter,r *http.Request){
   if id==""{apiError(w,400,"missing id");return}
   switch parts[0] {
   case "providers":
+   // Provider API keys are scoped by provider ID and can be managed independently.
+   if len(parts)>=3 && parts[2]=="keys" {
+    if len(parts)==3 {
+     switch r.Method {
+     case "GET":
+      keys,e:=a.store.ProviderKeys(id)
+      if e!=nil{apiError(w,500,"cannot load provider keys");return}
+      writeJSON(w,200,keys);return
+     case "POST":
+      var k ProviderKey
+      if e:=parseJSON(w,r,&k);e!=nil{apiError(w,400,e.Error());return}
+      k.ID="";k.ProviderID=id
+      saved,e:=a.store.SaveProviderKey(k)
+      if e!=nil{writeFailure(w,e);return}
+      writeJSON(w,201,saved);return
+     default:method(w,r,"GET","POST");return
+     }
+    }
+    if len(parts)==4 {
+     keyID:=parts[3]
+     switch r.Method {
+     case "PUT":
+      var k ProviderKey
+      if e:=parseJSON(w,r,&k);e!=nil{apiError(w,400,e.Error());return}
+      k.ID=keyID;k.ProviderID=id
+      saved,e:=a.store.SaveProviderKey(k)
+      if e!=nil{writeFailure(w,e);return}
+      writeJSON(w,200,saved);return
+     case "DELETE":
+      if e:=a.store.DeleteProviderKey(id,keyID);e!=nil{writeFailure(w,e);return}
+      writeJSON(w,200,map[string]bool{"deleted":true});return
+     default:method(w,r,"PUT","DELETE");return
+     }
+    }
+    if len(parts)==5 && parts[4]=="reset" {
+     if !method(w,r,"POST"){return}
+     if e:=a.store.ResetProviderKey(id,parts[3]);e!=nil{writeFailure(w,e);return}
+     writeJSON(w,200,map[string]bool{"reset":true});return
+    }
+    apiError(w,404,"unknown provider key action");return
+   }
    switch r.Method {
    case "PUT":
     if len(parts)!=2{break}
@@ -127,7 +168,9 @@ func (a *App) adminAPI(w http.ResponseWriter,r *http.Request){
    }
    if len(parts)==3&&parts[2]=="rotate" {
     if !method(w,r,"POST"){return}
-    key,e:=a.store.RotateKey(id);if e!=nil{writeFailure(w,e);return}
+    var payload struct {ClientKey string `json:"client_key"`}
+    if e:=parseJSON(w,r,&payload);e!=nil{apiError(w,400,e.Error());return}
+    key,e:=a.store.RotateKey(id,payload.ClientKey);if e!=nil{writeFailure(w,e);return}
     writeJSON(w,200,map[string]string{"client_key":key});return
    }
    if len(parts)!=2{apiError(w,404,"unknown action");return}
