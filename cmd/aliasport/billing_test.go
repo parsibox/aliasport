@@ -2,6 +2,7 @@ package main
 
 import (
  "bytes"
+ "database/sql"
  "encoding/json"
  "io"
  "net/http"
@@ -136,4 +137,36 @@ func TestLocalGatewayCustomKey(t *testing.T){
  list,e:=s.Gateways();if e!=nil{t.Fatal(e)}
  raw,_:=json.Marshal(list)
  if bytes.Contains(raw,[]byte(newKey)){t.Fatal("gateway listing leaked client key")}
+}
+
+func TestLegacyProviderCredentialMigration(t *testing.T) {
+ root:=t.TempDir()
+ t.Setenv("XDG_CONFIG_HOME",root)
+ t.Setenv("LOCALAPPDATA",root)
+ path:=filepath.Join(root,"legacy.db")
+ db,err:=sql.Open("sqlite",path)
+ if err!=nil{t.Fatal(err)}
+ _,err=db.Exec(`CREATE TABLE providers(
+  id TEXT PRIMARY KEY,name TEXT NOT NULL,base_url TEXT NOT NULL,
+  secret BLOB NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
+ if err!=nil{t.Fatal(err)}
+ encrypted,err:=sealSecret([]byte("old-provider-key"))
+ if err!=nil{t.Fatal(err)}
+ _,err=db.Exec("INSERT INTO providers(id,name,base_url,secret) VALUES(?,?,?,?)",
+  "old-id","Legacy","https://zro.moonmath.ai",encrypted)
+ if err!=nil{t.Fatal(err)}
+ if err=db.Close();err!=nil{t.Fatal(err)}
+ s,err:=OpenStore(path)
+ if err!=nil{t.Fatal(err)}
+ keys,err:=s.ProviderKeys("old-id")
+ if err!=nil||len(keys)!=1{t.Fatalf("legacy key not imported: %v %+v",err,keys)}
+ var copy []byte
+ if err=s.db.QueryRow("SELECT secret FROM providers WHERE id='old-id'").Scan(&copy);err!=nil{t.Fatal(err)}
+ if len(copy)!=0{t.Fatal("obsolete legacy secret was not cleared")}
+ if err=s.Close();err!=nil{t.Fatal(err)}
+ s,err=OpenStore(path)
+ if err!=nil{t.Fatal(err)}
+ defer s.Close()
+ keys,err=s.ProviderKeys("old-id")
+ if err!=nil||len(keys)!=1{t.Fatalf("migration was not idempotent: %v %+v",err,keys)}
 }
