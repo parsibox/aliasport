@@ -86,24 +86,32 @@ function Test-AliasPortAdmin {
     }
 }
 
-function Get-ActiveProxyPort {
+function Get-ActiveProxyPorts {
     param([string]$Base)
     $response = Request-Local -Url ($Base + '/api/overview')
     if ($response.StatusCode -ne 200) {
-        throw "Cannot read current Gateway port from $Base"
+        throw "Cannot read active Gateway ports from $Base"
     }
     $overview = $response.Content | ConvertFrom-Json
-    if ([string]::IsNullOrWhiteSpace([string]$overview.gateway_url)) {
-        return 0
+    $urls = @()
+    if ($null -ne $overview.gateway_urls) {
+        $urls = @($overview.gateway_urls)
+    } elseif (-not [string]::IsNullOrWhiteSpace([string]$overview.gateway_url)) {
+        # Compatibility with older AliasPort builds.
+        $urls = @($overview.gateway_url)
     }
-    $proxy = $null
-    if (-not [Uri]::TryCreate([string]$overview.gateway_url, [UriKind]::Absolute, [ref]$proxy) -or
-        $proxy.Scheme -ne 'http' -or
-        ($proxy.Host -ne '127.0.0.1' -and $proxy.Host -ne '::1') -or
-        $proxy.Port -lt 1 -or $proxy.Port -gt 65535) {
-        throw 'Existing AliasPort reports an invalid proxy URL; refusing to build.'
+    $ports = @()
+    foreach ($address in $urls) {
+        $proxy = $null
+        if (-not [Uri]::TryCreate([string]$address, [UriKind]::Absolute, [ref]$proxy) -or
+            $proxy.Scheme -ne 'http' -or
+            ($proxy.Host -ne '127.0.0.1' -and $proxy.Host -ne '::1') -or
+            $proxy.Port -lt 1 -or $proxy.Port -gt 65535) {
+            throw 'Existing AliasPort reports an invalid proxy URL; refusing to build.'
+        }
+        $ports += $proxy.Port
     }
-    return $proxy.Port
+    return $ports
 }
 
 function Stop-Existing {
@@ -116,7 +124,7 @@ function Stop-Existing {
 
     # Only stop a verified AliasPort management listener.
     Test-AliasPortAdmin -Base $Base
-    $proxyPort = Get-ActiveProxyPort -Base $Base
+    $proxyPorts = @(Get-ActiveProxyPorts -Base $Base)
     Write-Host "[shutdown] Stopping existing AliasPort at $Base ..."
     $response = Request-Local -Url ($Base + '/api/shutdown') -Verb 'POST' -Origin $Base -Payload '{"confirm":"shutdown"}'
     $answer = $response.Content | ConvertFrom-Json
@@ -127,12 +135,17 @@ function Stop-Existing {
     $deadline = [DateTime]::UtcNow.AddSeconds(20)
     do {
         $adminBusy = Test-LocalPort -Address $adminUri.Host -Port $adminUri.Port
-        $proxyBusy = ($proxyPort -ne 0 -and
-            (Test-LocalPort -Address '127.0.0.1' -Port $proxyPort))
+        $proxyBusy = $false
+        foreach ($proxyPort in $proxyPorts) {
+            if (Test-LocalPort -Address '127.0.0.1' -Port $proxyPort) {
+                $proxyBusy = $true
+                break
+            }
+        }
         if (-not $adminBusy -and -not $proxyBusy) {
             # Give Windows a moment to release the mapped EXE after Go exits.
             Start-Sleep -Milliseconds 300
-            Write-Host '[shutdown] Both listeners have stopped.'
+            Write-Host '[shutdown] All Gateway listeners and management have stopped.'
             return
         }
         Start-Sleep -Milliseconds 150
