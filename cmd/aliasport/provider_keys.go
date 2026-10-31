@@ -75,7 +75,7 @@ func (s *Store) migrateProviderKeys()error {
 func(s *Store) ProviderKeys(providerID string)([]ProviderKey,error){
  rows,err:=s.db.Query(`SELECT id,provider_id,label,priority,enabled,status,fingerprint,
  COALESCE(last_billing_at,''),COALESCE(last_used_at,'')
- FROM provider_keys WHERE provider_id=? ORDER BY priority ASC,created_at ASC,id ASC`,providerID)
+ FROM provider_keys WHERE provider_id=? ORDER BY priority ASC,rowid ASC`,providerID)
  if err!=nil{return nil,err}
  defer rows.Close()
  keys:=[]ProviderKey{}
@@ -181,7 +181,7 @@ func(s *Store) EligibleProviderKeys(providerID string)([]UpstreamKey,error){
  rows,err:=s.db.Query(`SELECT id,secret FROM provider_keys
  WHERE provider_id=? AND enabled=1 AND status='ready'
  AND (rate_limit_until IS NULL OR rate_limit_until<=?)
- ORDER BY priority ASC,created_at ASC,id ASC`,providerID,time.Now().UTC().Format(time.RFC3339))
+ ORDER BY priority ASC,rowid ASC`,providerID,time.Now().UTC().Format(time.RFC3339))
  if err!=nil{return nil,err}
  defer rows.Close()
  var results []UpstreamKey
