@@ -204,6 +204,20 @@ async function reload(){
   render();
  }catch(e){notify('عدم ارتباط با API: '+e.message,true)}
 }
+function showAliasesForProvider(providerId){
+ if(!state.providers.some(p=>p.id===providerId))return;
+ selectedAliasIds.clear();
+ listFilters.aliasesSearch='';
+ listFilters.aliasesProvider=providerId;
+ listFilters.aliasesGateway='';
+ listFilters.aliasesStatus='';
+ const input=document.querySelector('#aliases input[type="search"]');
+ if(input)input.value='';
+ const status=document.querySelector('#aliases select[aria-label="فیلتر وضعیت Aliasها"]');
+ if(status)status.value='';
+ render();
+ showPage('aliases');
+}
 function setListFilter(name,value){
  if(!Object.hasOwn(listFilters,name))return;
  listFilters[name]=String(value);
@@ -277,7 +291,7 @@ function render(){
   ['aliases-filter-count',filteredAliases.length,a.length],
   ['events-filter-count',filteredEvents.length,state.events.length]
  ]) $(id).textContent=count+' از '+total+' مورد';
- $('providers-list').innerHTML=filteredProviders.length?table(['نام Provider','Base URL','نوع API مقصد','کلیدهای API','عملیات'],filteredProviders.map(x=>[`<b>${esc(x.name)}</b>`,`<code>${esc(x.base_url)}</code>`,`<span class="tag">${esc(protocolLabel(x.api_type))}</span>`,`<span class="tag good">${state.keys.filter(k=>k.provider_id===x.id).length} کلید رمزگذاری‌شده</span>`,`<div class="toolbar"><button class="btn small" onclick="probeProvider('${x.id}','models')">مدل‌ها / تست اتصال</button><button class="btn small" onclick="probeProvider('${x.id}','balance')">موجودی</button><button class="btn small primary" onclick="openProviderKey('', '${x.id}')">ایجاد کلید API</button><button class="btn small" onclick="openAlias('', '${x.id}')">ایجاد قانون Alias</button><button class="btn small" onclick="openProvider('${x.id}')">ویرایش</button><button class="btn small danger" onclick="removeRecord('providers','${x.id}')">حذف</button></div>`])):empty('Provider با این جست‌وجو پیدا نشد','برای شروع یک Provider از فهرست آماده انتخاب کنید یا تنظیمات آن را دستی وارد کنید.');
+ $('providers-list').innerHTML=filteredProviders.length?table(['نام Provider','Base URL','نوع API مقصد','کلیدهای API','عملیات'],filteredProviders.map(x=>[`<b>${esc(x.name)}</b>`,`<code>${esc(x.base_url)}</code>`,`<span class="tag">${esc(protocolLabel(x.api_type))}</span>`,`<span class="tag good">${state.keys.filter(k=>k.provider_id===x.id).length} کلید رمزگذاری‌شده</span>`,`<div class="toolbar"><button class="btn small" onclick="probeProvider('${x.id}','models')">مدل‌ها / تست اتصال</button><button class="btn small" onclick="probeProvider('${x.id}','balance')">موجودی</button><button class="btn small primary" onclick="openProviderKey('', '${x.id}')">ایجاد کلید API</button><button class="btn small" onclick="openAlias('', '${x.id}')">ایجاد قانون Alias</button><button class="btn small" onclick="showAliasesForProvider('${x.id}')">نمایش Aliasها</button><button class="btn small" onclick="openProvider('${x.id}')">ویرایش</button><button class="btn small danger" onclick="removeRecord('providers','${x.id}')">حذف</button></div>`])):empty('Provider با این جست‌وجو پیدا نشد','برای شروع یک Provider از فهرست آماده انتخاب کنید یا تنظیمات آن را دستی وارد کنید.');
  $('keys-list').innerHTML=filteredKeys.length?table(['<label title="انتخاب همه کلیدهای قابل مشاهده"><input id="keys-select-all" type="checkbox" class="alias-select-checkbox" aria-label="انتخاب همه کلیدهای API قابل مشاهده" onchange="toggleAllProviderKeys(this.checked)"></label>','Provider','نام کلید','اثر انگشت','اولویت','وضعیت','آخرین استفاده','عملیات'],filteredKeys.map(k=>{
   const label=esc(p.find(x=>x.id===k.provider_id)?.name||'—');
   const st=!k.enabled?'<span class="tag">غیرفعال</span>':k.status==='billing_blocked'?'<span class="tag bad">Billing مسدود</span>':'<span class="tag good">آماده</span>';
