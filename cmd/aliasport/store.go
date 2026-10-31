@@ -259,8 +259,14 @@ func(s *Store)SaveAlias(a Alias)(Alias,error){
  if len(a.Incoming)>200||len(a.Target)>200 {return Alias{},errors.New("model identifier is too long")}
  if a.ID==""{
   a.ID=newID()
-  _,e:=s.db.Exec("INSERT INTO aliases(id,gateway_id,provider_id,incoming,target,enabled) VALUES(?,?,?,?,?,?)",a.ID,a.GatewayID,a.ProviderID,a.Incoming,a.Target,a.Enabled)
-  return a,e
+  tx,e:=s.db.Begin();if e!=nil{return Alias{},e}
+  defer tx.Rollback()
+  if _,e=tx.Exec("INSERT INTO aliases(id,gateway_id,provider_id,incoming,target,enabled) VALUES(?,?,?,?,?,?)",a.ID,a.GatewayID,a.ProviderID,a.Incoming,a.Target,a.Enabled);e!=nil{return Alias{},e}
+  // Creating a mapping explicitly also grants that Provider access to the
+  // Gateway; it may subsequently be disabled from Provider settings.
+  if _,e=tx.Exec("INSERT OR IGNORE INTO gateway_providers(gateway_id,provider_id) VALUES(?,?)",a.GatewayID,a.ProviderID);e!=nil{return Alias{},e}
+  if e=tx.Commit();e!=nil{return Alias{},e}
+  return a,nil
  }
  r,e:=s.db.Exec("UPDATE aliases SET gateway_id=?,provider_id=?,incoming=?,target=?,enabled=? WHERE id=?",a.GatewayID,a.ProviderID,a.Incoming,a.Target,a.Enabled,a.ID)
  if e!=nil{return Alias{},e};n,_:=r.RowsAffected();if n==0{return Alias{},ErrNotFound}
