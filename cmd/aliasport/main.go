@@ -26,8 +26,8 @@ var webAssets embed.FS
 type App struct {
  store *Store
  started time.Time
- gatewayPort string
  adminPort string
+ proxy *proxyManager
  client *http.Client
  stopCh chan struct{}
  stopOnce sync.Once
@@ -35,11 +35,10 @@ type App struct {
 
 func main() {
  admin := flag.String("admin", "127.0.0.1:8787", "local management listener")
- gateway := flag.String("gateway", "127.0.0.1:18765", "local gateway listener")
  noBrowser := flag.Bool("no-browser", false, "do not open web browser")
  flag.Parse()
 
- if err := run(*admin, *gateway, !*noBrowser); err != nil {
+ if err := run(*admin, !*noBrowser); err != nil {
   // Windows GUI binaries intentionally have no console; log errors to a local file.
   dir, e := dataDir()
   if e == nil {
@@ -61,11 +60,8 @@ func dataDir() (string,error) {
  return filepath.Join(config,"AliasPort"),nil
 }
 
-func run(adminAddr,gatewayAddr string,launchBrowser bool) error {
- if !isLoopbackAddr(adminAddr) || !isLoopbackAddr(gatewayAddr) {
-  return errors.New("both listeners must bind to a loopback interface")
- }
- if adminAddr == gatewayAddr { return errors.New("admin and gateway ports must be different") }
+func run(adminAddr string,launchBrowser bool) error {
+ if !isLoopbackAddr(adminAddr) {return errors.New("management listener must bind to a loopback interface")}
  dir,err:=dataDir(); if err != nil{return err}
  if err=os.MkdirAll(dir,0700);err!=nil{return err}
  store,err:=OpenStore(filepath.Join(dir,"aliasport.db"));if err!=nil{return err}
@@ -75,20 +71,16 @@ func run(adminAddr,gatewayAddr string,launchBrowser bool) error {
  transport.ResponseHeaderTimeout=120*time.Second
  // Never follow upstream redirects with an API key. A malicious redirect could
  // otherwise forward a provider secret to an unrelated host.
- app:=&App{store:store,started:time.Now(),adminPort:adminAddr,gatewayPort:gatewayAddr,client:&http.Client{
+ app:=&App{store:store,started:time.Now(),adminPort:adminAddr,client:&http.Client{
   Transport:transport,
   CheckRedirect:func(_ *http.Request,_ []*http.Request)error{return http.ErrUseLastResponse},
  },stopCh:make(chan struct{})}
+ app.proxy=newProxyManager(app)
  adminMux:=http.NewServeMux()
  staticFS,err:=fs.Sub(webAssets,"web");if err!=nil{return err}
  adminMux.Handle("/",http.FileServer(http.FS(staticFS)))
  adminMux.HandleFunc("/api/",app.adminAPI)
  adminMux.HandleFunc("/health",func(w http.ResponseWriter,r *http.Request){writeJSON(w,200,map[string]any{"ok":true,"service":"aliasport-admin"})})
- gatewayMux:=http.NewServeMux()
- gatewayMux.HandleFunc("/health",func(w http.ResponseWriter,r *http.Request){writeJSON(w,200,map[string]any{"ok":true,"service":"aliasport-gateway"})})
- gatewayMux.HandleFunc("/v1/models",app.models)
- gatewayMux.HandleFunc("/v1/messages",app.messages)
- gatewayMux.HandleFunc("/v1/messages/count_tokens",app.messages)
  adminListener,err:=net.Listen("tcp",adminAddr)
  if err!=nil {
   // If the existing instance owns this local port, reuse its web UI.
@@ -106,15 +98,12 @@ func run(adminAddr,gatewayAddr string,launchBrowser bool) error {
   return fmt.Errorf("admin listen: %w",err)
  }
  defer adminListener.Close()
- gatewayListener,err:=net.Listen("tcp",gatewayAddr);if err!=nil{return fmt.Errorf("gateway listen: %w",err)}
- defer gatewayListener.Close()
  adminServer:=&http.Server{Handler:adminSecurity(adminMux),ReadHeaderTimeout:10*time.Second,IdleTimeout:2*time.Minute}
- gatewayServer:=&http.Server{Handler:gatewayMux,ReadHeaderTimeout:10*time.Second,IdleTimeout:2*time.Minute}
- errorsCh:=make(chan error,2)
+ if err=app.proxy.startFromDatabase();err!=nil{return fmt.Errorf("gateway startup: %w",err)}
+ errorsCh:=make(chan error,1)
  go func(){e:=adminServer.Serve(adminListener);if e!=nil&&!errors.Is(e,http.ErrServerClosed){errorsCh<-e}}()
- go func(){e:=gatewayServer.Serve(gatewayListener);if e!=nil&&!errors.Is(e,http.ErrServerClosed){errorsCh<-e}}()
  url:="http://"+adminAddr
- log.Printf("AliasPort management %s | gateway http://%s",url,gatewayAddr)
+ log.Printf("AliasPort management %s | gateway port is configured per profile",url)
  if launchBrowser {go func(){time.Sleep(350*time.Millisecond);openBrowser(url)}()}
  sig:=make(chan os.Signal,1)
  signal.Notify(sig,os.Interrupt,syscall.SIGTERM)
@@ -128,13 +117,13 @@ func run(adminAddr,gatewayAddr string,launchBrowser bool) error {
   // active connections (including long-running SSE) immediately, then return
   // from run so main exits and the SQLite store closes.
   _=adminServer.Close()
-  _=gatewayServer.Close()
+  app.proxy.close()
   return nil
  }
  ctx,cancel:=context.WithTimeout(context.Background(),15*time.Second)
  defer cancel()
  _=adminServer.Shutdown(ctx)
- _=gatewayServer.Shutdown(ctx)
+ app.proxy.close()
  return err
 }
 
