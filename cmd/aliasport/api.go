@@ -96,6 +96,9 @@ func (a *App) adminAPI(w http.ResponseWriter,r *http.Request){
     var v Provider
     if e:=parseJSON(w,r,&v);e!=nil{apiError(w,400,e.Error());return}
     v.ID="" // prevent overwriting another record
+    if v.GatewayIDs!=nil{
+     if e:=a.store.ValidateProviderGatewayIDs(v.GatewayIDs);e!=nil{apiError(w,400,e.Error());return}
+    }
     saved,e:=a.store.SaveProvider(v);if e!=nil{writeFailure(w,e);return}
     if v.GatewayIDs!=nil{
      if e=a.store.SetProviderGateways(saved.ID,v.GatewayIDs);e!=nil{writeFailure(w,e);return}
@@ -201,6 +204,9 @@ func (a *App) adminAPI(w http.ResponseWriter,r *http.Request){
     var v Provider
     if e:=parseJSON(w,r,&v);e!=nil{apiError(w,400,e.Error());return}
     v.ID=id
+    if v.GatewayIDs!=nil{
+     if e:=a.store.ValidateProviderGatewayIDs(v.GatewayIDs);e!=nil{apiError(w,400,e.Error());return}
+    }
     saved,e:=a.store.SaveProvider(v);if e!=nil{writeFailure(w,e);return}
     if v.GatewayIDs!=nil{
      if e=a.store.SetProviderGateways(saved.ID,v.GatewayIDs);e!=nil{writeFailure(w,e);return}
