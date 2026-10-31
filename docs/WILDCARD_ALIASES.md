@@ -1,6 +1,6 @@
 # Automatic Provider routing and per-Provider wildcard aliases
 
-AliasPort is designed as a transparent **multi-Provider gateway**. Claude Desktop, Claude Code and OpenAI-compatible clients connect to a single local Gateway key and port. They never choose which upstream Provider or API key to use.
+AliasPort is designed as a transparent **multi-Provider gateway**. Claude Desktop, Claude Code and OpenAI-compatible clients may each connect to their own concurrently active Gateway, with its own local port and client key. They never choose which upstream Provider or API key to use.
 
 ## One wildcard per Provider per Gateway
 
@@ -18,7 +18,7 @@ Within a given Provider, an **enabled exact** model alias takes precedence over 
 
 ## Automatic failover order
 
-1. Select all **enabled Providers** in configured priority order that have an enabled matching exact alias or wildcard.
+1. Select only **enabled Providers explicitly associated with the receiving Gateway** in configured priority order that have an enabled matching exact alias or wildcard.
 2. For the current Provider, resolve the incoming model to **that Provider's own target**; never reuse another Provider's target model.
 3. Choose the first active and eligible API key under that Provider (individual API Key priority order).
 4. If the Provider has no eligible key, skip to the next Provider.
@@ -34,8 +34,8 @@ API-format conversion between Anthropic Messages and OpenAI Chat Completions is 
 ## Configuration in the web interface
 
 1. **Providers** → create ZRO, APInex, GonkaRouter or other compatible Providers. Choose each Provider's **Priority** (smaller number = earlier) and keep it **Enabled**.
-2. **API Keys** → register one or more keys per Provider, also ordered by their existing key priority. Credentials remain encrypted in SQLite.
-3. **Gateway Profiles** → choose only the incoming protocol, port and local key. There is **no default Provider selector**.
+2. **API Keys** → register one or more keys per Provider, also ordered by their existing key priority. In each Provider's editor, select the **allowed Gateways**; a Provider can belong to several at once. Credentials remain encrypted in SQLite.
+3. **Gateway Profiles** → choose the incoming protocol, independent port and local key. Several Gateway profiles may run at the same time; there is **no default Provider selector**.
 4. **Model Aliases** → create a separate `*` alias for each Provider under the same Gateway, each pointing to a real upstream target model.
 5. Activate the Gateway and connect your client once. AliasPort chooses the Provider and key automatically for each incoming request.
 
