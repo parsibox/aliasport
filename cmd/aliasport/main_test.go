@@ -78,7 +78,10 @@ func TestProviderSecretIsEncryptedAtRest(t *testing.T){
  p,e:=s.SaveProvider(Provider{Name:"ZRO",BaseURL:"https://zro.moonmath.ai",APIKey:"my-very-secret-api-key"})
  if e!=nil{t.Fatal(e)}
  var raw []byte
- if e=s.db.QueryRow("SELECT secret FROM providers WHERE id=?",p.ID).Scan(&raw);e!=nil{t.Fatal(e)}
+ if e=s.db.QueryRow("SELECT secret FROM provider_keys WHERE provider_id=? ORDER BY priority LIMIT 1",p.ID).Scan(&raw);e!=nil{t.Fatal(e)}
+ var oldLegacy []byte
+ if e=s.db.QueryRow("SELECT secret FROM providers WHERE id=?",p.ID).Scan(&oldLegacy);e!=nil{t.Fatal(e)}
+ if len(oldLegacy)!=0{t.Fatal("obsolete provider secret was duplicated")}
  if bytes.Contains(raw,[]byte("my-very-secret-api-key")){t.Fatal("provider key persisted in plaintext")}
  plain,e:=openSecret(raw)
  if e!=nil||string(plain)!="my-very-secret-api-key"{t.Fatalf("decrypt failed: %v",e)}
