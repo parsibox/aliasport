@@ -16,7 +16,7 @@ func freeProxyPort(t *testing.T)int{
  if port==8787{return freeProxyPort(t)}
  return port
 }
-func TestGatewayProfilePortSwitch(t *testing.T){
+func TestGatewayProfilesRunConcurrently(t *testing.T){
  store:=testStore(t)
  firstPort:=freeProxyPort(t)
  secondPort:=freeProxyPort(t)
@@ -29,7 +29,7 @@ func TestGatewayProfilePortSwitch(t *testing.T){
  app.proxy=newProxyManager(app)
  if err=app.proxy.switchTo(first.ID);err!=nil{t.Fatal(err)}
  defer app.proxy.close()
- client:=&http.Client{Timeout:1*time.Second}
+ client:=&http.Client{Timeout:time.Second}
  get:=func(port int)(int,error){
   r,err:=client.Get("http://127.0.0.1:"+strconv.Itoa(port)+"/health")
   if err!=nil{return 0,err}
@@ -38,13 +38,11 @@ func TestGatewayProfilePortSwitch(t *testing.T){
  }
  if code,err:=get(firstPort);err!=nil||code!=200{t.Fatalf("first port not listening: %d, %v",code,err)}
  if err=app.proxy.switchTo(second.ID);err!=nil{t.Fatal(err)}
- if code,err:=get(secondPort);err!=nil||code!=200{t.Fatalf("second port not listening: %d, %v",code,err)}
- for i:=0;i<30;i++{
-  c,err:=get(firstPort)
-  if err!=nil{break}
-  if i==29{t.Fatalf("old proxy port remains open: status %d",c)}
-  time.Sleep(15*time.Millisecond)
+ for _,port:=range []int{firstPort,secondPort}{
+  if code,err:=get(port);err!=nil||code!=200{t.Fatalf("concurrent port %d failed: %d %v",port,code,err)}
  }
+ active,err:=store.ActiveGateways()
+ if err!=nil||len(active)!=2{t.Fatalf("expected both gateways active: %v %v",active,err)}
  if err=app.proxy.deactivate(second.ID);err!=nil{t.Fatal(err)}
  for i:=0;i<30;i++{
   _,err:=get(secondPort)
@@ -52,7 +50,9 @@ func TestGatewayProfilePortSwitch(t *testing.T){
   if i==29{t.Fatal("deactivated gateway still listens")}
   time.Sleep(15*time.Millisecond)
  }
- if _,err=store.ActiveGateway();err!=ErrNotFound{t.Errorf("expected no active gateway after deactivation: %v",err)}
+ if code,err:=get(firstPort);err!=nil||code!=200{t.Fatalf("stopping second Gateway also stopped first: %d %v",code,err)}
+ active,err=store.ActiveGateways()
+ if err!=nil||len(active)!=1||active[0].ID!=first.ID{t.Fatalf("remaining Gateway changed: %v %v",active,err)}
 }
 
 func TestPortAlreadyTakenDoesNotChangeActiveProfile(t *testing.T){
