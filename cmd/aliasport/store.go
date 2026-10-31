@@ -124,7 +124,7 @@ func validateProvider(p Provider)error{
  return nil
 }
 func(s *Store)Providers()([]Provider,error){
- rows,e:=s.db.Query("SELECT p.id,p.name,p.base_url,p.api_type,p.priority,p.enabled,EXISTS(SELECT 1 FROM provider_keys k WHERE k.provider_id=p.id) FROM providers p ORDER BY p.priority,p.created_at,p.id");if e!=nil{return nil,e};defer rows.Close()
+ rows,e:=s.db.Query("SELECT p.id,p.name,p.base_url,p.api_type,p.priority,p.enabled,EXISTS(SELECT 1 FROM provider_keys k WHERE k.provider_id=p.id) FROM providers p ORDER BY p.priority,p.rowid");if e!=nil{return nil,e};defer rows.Close()
  result:=[]Provider{}
  for rows.Next(){var p Provider;if e=rows.Scan(&p.ID,&p.Name,&p.BaseURL,&p.APIType,&p.Priority,&p.Enabled,&p.HasKey);e!=nil{return nil,e};result=append(result,p)}
  return result,rows.Err()
@@ -327,7 +327,7 @@ func(s *Store)RoutesFor(incoming string)([]Route,error){
    ORDER BY CASE WHEN best.incoming=? THEN 0 ELSE 1 END
    LIMIT 1
  )
- ORDER BY p.priority ASC,p.created_at ASC,p.id ASC`,incoming,incoming,incoming)
+ ORDER BY p.priority ASC,p.rowid ASC`,incoming,incoming,incoming)
  if err!=nil{return nil,err}
  defer rows.Close()
  candidates:=[]Route{}
