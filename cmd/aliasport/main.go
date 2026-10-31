@@ -81,7 +81,22 @@ func run(adminAddr,gatewayAddr string,launchBrowser bool) error {
  gatewayMux.HandleFunc("/v1/models",app.models)
  gatewayMux.HandleFunc("/v1/messages",app.messages)
  gatewayMux.HandleFunc("/v1/messages/count_tokens",app.messages)
- adminListener,err:=net.Listen("tcp",adminAddr);if err!=nil{return fmt.Errorf("admin listen: %w",err)}
+ adminListener,err:=net.Listen("tcp",adminAddr)
+ if err!=nil {
+  // If the existing instance owns this local port, reuse its web UI.
+  if launchBrowser {
+   probe:=&http.Client{Timeout:1500*time.Millisecond}
+   resp,probeErr:=probe.Get("http://"+adminAddr+"/health")
+   if probeErr==nil {
+    _=resp.Body.Close()
+    if resp.StatusCode==200 && resp.Header.Get("X-AliasPort-Admin")=="true" {
+     openBrowser("http://"+adminAddr)
+     return nil
+    }
+   }
+  }
+  return fmt.Errorf("admin listen: %w",err)
+ }
  defer adminListener.Close()
  gatewayListener,err:=net.Listen("tcp",gatewayAddr);if err!=nil{return fmt.Errorf("gateway listen: %w",err)}
  defer gatewayListener.Close()
@@ -120,6 +135,7 @@ func isLoopbackAddr(address string) bool {
 func adminSecurity(next http.Handler) http.Handler {
  return http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
   w.Header().Set("X-Content-Type-Options","nosniff")
+  w.Header().Set("X-AliasPort-Admin","true")
   w.Header().Set("X-Frame-Options","DENY")
   w.Header().Set("Referrer-Policy","no-referrer")
   w.Header().Set("Cache-Control","no-store")
