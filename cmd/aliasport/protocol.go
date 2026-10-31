@@ -42,6 +42,8 @@ func(s *Store)migrateProtocols()error{
   {"gateways","port","ALTER TABLE gateways ADD COLUMN port INTEGER NOT NULL DEFAULT 18765"},
   {"gateways","input_type","ALTER TABLE gateways ADD COLUMN input_type TEXT NOT NULL DEFAULT 'anthropic_messages'"},
   {"gateways","default_provider_id","ALTER TABLE gateways ADD COLUMN default_provider_id TEXT NOT NULL DEFAULT ''"},
+  {"providers","priority","ALTER TABLE providers ADD COLUMN priority INTEGER NOT NULL DEFAULT 100"},
+  {"providers","enabled","ALTER TABLE providers ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1"},
  }
  for _,operation:=range operations{
   exists,e:=hasColumn(tx,operation.table,operation.column)
