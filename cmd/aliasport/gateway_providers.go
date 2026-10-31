@@ -34,6 +34,21 @@ func(s *Store)ProviderGatewayIDs(providerID string)([]string,error){
  }
  return ids,rows.Err()
 }
+// ValidateProviderGatewayIDs runs before saving Provider details so a wrong
+// Gateway selection cannot partially update the Provider's public settings.
+func(s *Store)ValidateProviderGatewayIDs(ids []string)error{
+ seen:=make(map[string]bool,len(ids))
+ for _,id:=range ids{
+  if len(id)!=24{return fmt.Errorf("invalid Gateway ID %q",id)}
+  if seen[id]{return fmt.Errorf("duplicate Gateway ID %q",id)}
+  seen[id]=true
+  var found int
+  err:=s.db.QueryRow("SELECT 1 FROM gateways WHERE id=?",id).Scan(&found)
+  if errors.Is(err,sql.ErrNoRows){return fmt.Errorf("Gateway does not exist: %s",id)}
+  if err!=nil{return err}
+ }
+ return nil
+}
 func(s *Store)SetProviderGateways(providerID string,ids []string)error{
  tx,err:=s.db.Begin();if err!=nil{return err}
  defer tx.Rollback()
