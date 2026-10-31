@@ -18,6 +18,14 @@ Active gateway: http://127.0.0.1:18765
 
 The browser opens automatically. The built Windows executable uses `-H windowsgui` and opens no console window.
 
+### Exit the program completely
+
+In the management UI, open **تنظیمات** and choose **⏻ بستن برنامه**, then confirm. AliasPort closes both the management listener (port 8787) and the API gateway listener (port 18765), terminates active HTTP/SSE connections and exits the Go process. Saved SQLite configuration is preserved.
+
+Closing the browser tab alone does **not** stop AliasPort. After an explicit shutdown, refreshing the management URL fails until `AliasPort.exe` is launched again. The shutdown endpoint requires a same-origin POST, a special request header and an explicit confirmation payload.
+
+The sidebar entry for provider credentials is called **🔑 کلیدهای API**; billing failover controls remain inside that section.
+
 ## Quick setup
 
 1. Create a provider named ZRO with base URL `https://zro.moonmath.ai` and the **first** ZRO API key.
