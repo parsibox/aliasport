@@ -302,3 +302,11 @@ func(s *Store) GatewayByID(id string)(Gateway,error){
  if errors.Is(err,sql.ErrNoRows){return Gateway{},ErrNotFound}
  return g,err
 }
+
+func(s *Store)ProviderByID(id string)(Provider,error){
+ var p Provider
+ err:=s.db.QueryRow("SELECT id,name,base_url,api_type FROM providers WHERE id=?",id).
+  Scan(&p.ID,&p.Name,&p.BaseURL,&p.APIType)
+ if errors.Is(err,sql.ErrNoRows){return Provider{},ErrNotFound}
+ return p,err
+}
