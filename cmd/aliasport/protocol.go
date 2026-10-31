@@ -44,6 +44,7 @@ func(s *Store)migrateProtocols()error{
   {"gateways","default_provider_id","ALTER TABLE gateways ADD COLUMN default_provider_id TEXT NOT NULL DEFAULT ''"},
   {"providers","priority","ALTER TABLE providers ADD COLUMN priority INTEGER NOT NULL DEFAULT 100"},
   {"providers","enabled","ALTER TABLE providers ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1"},
+  {"provider_keys","rate_limit_until","ALTER TABLE provider_keys ADD COLUMN rate_limit_until TEXT"},
  }
  for _,operation:=range operations{
   exists,e:=hasColumn(tx,operation.table,operation.column)
