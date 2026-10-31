@@ -580,9 +580,66 @@ function openAlias(id='',providerId=''){
  const fields=selectField('gateway_id','Gateway',gs,defaultGateway)+selectField('provider_id','Provider مقصد',ps,v?.provider_id||providerId||ps[0].id)+incomingModelField(v?.incoming||'claude-sonnet-5')+field('target','مدل واقعی Provider',v?.target||'','required dir="ltr"')+`<div class="field"><label><input id="f-enabled" name="enabled" type="checkbox" style="width:auto" ${v&&!v.enabled?'':'checked'}> قانون فعال باشد</label></div>`;
  modal(v?'ویرایش Alias':'ساخت Alias جدید',fields,async values=>api('aliases'+(id?'/'+id:''),id?'PUT':'POST',{...values,enabled:!!values.enabled}));
 }
+function toggleProviderKeySelection(id,checked){
+ if(keyBulkBusy||!visibleProviderKeys().some(k=>k.id===id))return;
+ if(checked)selectedKeyIds.add(id);else selectedKeyIds.delete(id);
+ const item=Array.from(document.querySelectorAll('#keys-list .provider-key-select')).find(box=>box.dataset.keyId===id);
+ if(item)item.closest('tr')?.classList.toggle('alias-row-selected',checked);
+ refreshProviderKeyBulkToolbar();
+}
+function toggleAllProviderKeys(checked){
+ if(keyBulkBusy)return;
+ for(const k of visibleProviderKeys()){
+  if(checked)selectedKeyIds.add(k.id);else selectedKeyIds.delete(k.id);
+ }
+ document.querySelectorAll('#keys-list .provider-key-select').forEach(box=>{
+  box.checked=checked;
+  box.closest('tr')?.classList.toggle('alias-row-selected',checked);
+ });
+ refreshProviderKeyBulkToolbar();
+}
+function refreshProviderKeyBulkToolbar(){
+ const visible=visibleProviderKeys();
+ const allowed=new Set(visible.map(k=>k.id));
+ for(const id of selectedKeyIds)if(!allowed.has(id))selectedKeyIds.delete(id);
+ const count=selectedKeyIds.size;
+ $('keys-selection-count').textContent=count+' مورد از '+visible.length+' کلید قابل مشاهده انتخاب شده';
+ $('keys-bulk-delete').disabled=keyBulkBusy||count===0;
+ const header=$('keys-select-all');
+ if(header){
+  header.checked=count>0&&count===visible.length;
+  header.indeterminate=count>0&&count<visible.length;
+  header.disabled=keyBulkBusy;
+ }
+ document.querySelectorAll('#keys-list .provider-key-select').forEach(box=>{
+  box.disabled=keyBulkBusy;
+  box.closest('tr')?.classList.toggle('alias-row-selected',box.checked);
+ });
+}
+async function bulkDeleteProviderKeys(){
+ if(keyBulkBusy)return;
+ const ids=Array.from(selectedKeyIds);
+ if(!ids.length){notify('ابتدا کلیدهای API موردنظر را انتخاب کنید',true);return}
+ if(ids.length>5000){notify('حداکثر ۵۰۰۰ کلید در هر عملیات قابل حذف است',true);return}
+ const affectedProviders=new Set(state.keys.filter(k=>ids.includes(k.id)).map(k=>k.provider_id));
+ if(!confirm('آیا از حذف دائمی '+ids.length+' کلید API انتخاب‌شده از '+affectedProviders.size+' Provider مطمئن هستید؟ این عملیات برگشت‌پذیر نیست و ممکن است ارسال درخواست به Providerها را متوقف کند.'))return;
+ keyBulkBusy=true;
+ refreshProviderKeyBulkToolbar();
+ try{
+  const result=await api('keys/bulk','POST',{action:'delete',ids});
+  selectedKeyIds.clear();
+  await reload();
+  notify(result.affected+' کلید API حذف شدند');
+ }catch(error){
+  notify('حذف گروهی کلیدها انجام نشد: '+error.message,true);
+ }finally{
+  keyBulkBusy=false;
+  refreshProviderKeyBulkToolbar();
+ }
+}
 function toggleAliasSelection(id,checked){
  if(aliasBulkBusy)return;
- if(!state.aliases.some(a=>a.id===id))return;
+ if(!visibleAliases().some(a=>a.id===id))return;
  if(checked)selectedAliasIds.add(id);else selectedAliasIds.delete(id);
  const boxes=Array.from(document.querySelectorAll('#aliases-list .alias-select'));
  const alias=state.aliases.find(a=>a.id===id);
@@ -594,7 +651,7 @@ function toggleAliasSelection(id,checked){
 }
 function toggleAllAliases(checked){
  if(aliasBulkBusy)return;
- for(const alias of state.aliases){
+ for(const alias of visibleAliases()){
   if(checked)selectedAliasIds.add(alias.id);
   else selectedAliasIds.delete(alias.id);
  }
@@ -605,17 +662,18 @@ function toggleAllAliases(checked){
  refreshAliasBulkToolbar();
 }
 function refreshAliasBulkToolbar(){
- const liveIds=new Set(state.aliases.map(alias=>alias.id));
+ const visible=visibleAliases();
+ const liveIds=new Set(visible.map(alias=>alias.id));
  for(const id of selectedAliasIds)if(!liveIds.has(id))selectedAliasIds.delete(id);
  const count=selectedAliasIds.size;
- $('alias-selection-count').textContent=count+' مورد از '+state.aliases.length+' Alias انتخاب شده';
+ $('alias-selection-count').textContent=count+' مورد از '+visible.length+' Alias قابل مشاهده انتخاب شده';
  for(const id of ['alias-bulk-enable','alias-bulk-disable','alias-bulk-delete']){
   $(id).disabled=aliasBulkBusy||count===0;
  }
  const header=$('alias-select-all');
  if(header){
-  header.checked=count>0&&count===state.aliases.length;
-  header.indeterminate=count>0&&count<state.aliases.length;
+  header.checked=count>0&&count===visible.length;
+  header.indeterminate=count>0&&count<visible.length;
   header.disabled=aliasBulkBusy;
  }
  document.querySelectorAll('#aliases-list .alias-select').forEach(box=>{
