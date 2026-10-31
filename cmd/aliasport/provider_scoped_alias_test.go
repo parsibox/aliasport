@@ -4,7 +4,6 @@ import (
  "bytes"
  "database/sql"
  "encoding/json"
- "errors"
  "net/http"
  "net/http/httptest"
  "path/filepath"
@@ -12,73 +11,110 @@ import (
  "testing"
 )
 
-func TestProviderScopedWildcardAliases(t *testing.T){
+func TestAutomaticProviderScopedAliases(t *testing.T){
  s:=testStore(t)
- p1,e:=s.SaveProvider(Provider{Name:"ZRO",BaseURL:"https://zro.example",APIKey:"zro-key"})
- if e!=nil{t.Fatal(e)}
- p2,e:=s.SaveProvider(Provider{Name:"APInex",BaseURL:"https://apinex.example",APIKey:"apx-key"})
- if e!=nil{t.Fatal(e)}
- g,e:=s.SaveGateway(Gateway{Name:"Claude Desktop"})
- if e!=nil{t.Fatal(e)}
- if e=s.ActivateGateway(g.ID);e!=nil{t.Fatal(e)}
- zro,e:=s.SaveAlias(Alias{GatewayID:g.ID,ProviderID:p1.ID,Incoming:"*",Target:"deepseek",Enabled:true})
- if e!=nil{t.Fatal(e)}
- apx,e:=s.SaveAlias(Alias{GatewayID:g.ID,ProviderID:p2.ID,Incoming:"*",Target:"glm-5.3",Enabled:true})
- if e!=nil{t.Fatalf("different Provider's wildcard must not conflict: %v",e)}
- if zro.ID==apx.ID{t.Fatal("Provider-specific aliases must be different rows")}
- if _,e=s.RouteFor("claude-sonnet-4-5");!errors.Is(e,ErrAmbiguousProvider){
-  t.Fatalf("two wildcard matches without default should be ambiguous, got %v",e)
+ p1,err:=s.SaveProvider(Provider{Name:"ZRO",BaseURL:"https://zro.example",APIKey:"zro-key",Priority:10})
+ if err!=nil{t.Fatal(err)}
+ p2,err:=s.SaveProvider(Provider{Name:"APInex",BaseURL:"https://apinex.example",APIKey:"apx-key",Priority:20})
+ if err!=nil{t.Fatal(err)}
+ g,err:=s.SaveGateway(Gateway{Name:"Claude"})
+ if err!=nil{t.Fatal(err)}
+ if err=s.ActivateGateway(g.ID);err!=nil{t.Fatal(err)}
+ for _,v:=range []struct{p Provider;target string}{{p1,"deepseek"},{p2,"glm-5.3"}}{
+  if _,err=s.SaveAlias(Alias{GatewayID:g.ID,ProviderID:v.p.ID,Incoming:"*",Target:v.target,Enabled:true});err!=nil{t.Fatalf("per-Provider wildcard conflict: %v",err)}
  }
- if _,e=s.SaveAlias(Alias{GatewayID:g.ID,ProviderID:p1.ID,Incoming:"*",Target:"duplicate",Enabled:true});e==nil{
-  t.Fatal("duplicate wildcard for the same Gateway AND Provider must conflict")
+ if _,err=s.SaveAlias(Alias{GatewayID:g.ID,ProviderID:p1.ID,Incoming:"*",Target:"duplicate",Enabled:true});err==nil{
+  t.Fatal("duplicate wildcard in same Gateway and Provider should conflict")
  }
- g.DefaultProviderID=p1.ID
- if _,e=s.SaveGateway(Gateway{ID:g.ID,Name:g.Name,Port:g.Port,InputType:g.InputType,DefaultProviderID:p1.ID});e!=nil{t.Fatal(e)}
- defaultRoute,e:=s.RouteFor("claude-haiku-4-5")
- if e!=nil||defaultRoute.ProviderID!=p1.ID||defaultRoute.Target!="deepseek"{
-  t.Fatalf("unexpected default ZRO fallback %+v %v",defaultRoute,e)
+ routes,err:=s.RoutesFor("claude-sonnet-4-5")
+ if err!=nil||len(routes)!=2{t.Fatalf("expected two eligible Providers, got %+v %v",routes,err)}
+ if routes[0].ProviderID!=p1.ID||routes[0].Target!="deepseek"||routes[1].ProviderID!=p2.ID||routes[1].Target!="glm-5.3"{
+  t.Fatalf("wrong ordered provider fallbacks: %+v",routes)
  }
- selected,e:=s.RouteForProvider("claude-haiku-4-5","APInex")
- if e!=nil||selected.ProviderID!=p2.ID||selected.Target!="glm-5.3"{
-  t.Fatalf("explicit APInex fallback failed %+v %v",selected,e)
+ _,err=s.SaveAlias(Alias{GatewayID:g.ID,ProviderID:p2.ID,Incoming:"claude-sonnet-4-5",Target:"glm-exact",Enabled:true})
+ if err!=nil{t.Fatal(err)}
+ routes,err=s.RoutesFor("claude-sonnet-4-5")
+ if err!=nil||routes[0].Target!="deepseek"||routes[1].Target!="glm-exact"{
+  t.Fatalf("exact alias must apply ONLY within its Provider: %+v %v",routes,err)
  }
- selected,e=s.RouteForProvider("claude-haiku-4-5",p2.ID)
- if e!=nil||selected.ProviderID!=p2.ID{t.Fatalf("provider ID selector failed %+v %v",selected,e)}
- exact,e:=s.SaveAlias(Alias{GatewayID:g.ID,ProviderID:p1.ID,Incoming:"claude-haiku-4-5",Target:"zro-exact",Enabled:true})
- if e!=nil{t.Fatal(e)}
- direct,e:=s.RouteFor("claude-haiku-4-5")
- if e!=nil||direct.Target!="zro-exact"{t.Fatalf("exact rule should take priority within default Provider: %+v %v",direct,e)}
- other,e:=s.RouteForProvider("claude-haiku-4-5",p2.ID)
- if e!=nil||other.Target!="glm-5.3"{t.Fatalf("ZRO exact should not override APInex fallback: %+v %v",other,e)}
- exact.Enabled=false
- if _,e=s.SaveAlias(exact);e!=nil{t.Fatal(e)}
- route,e:=s.RouteFor("claude-haiku-4-5")
- if e!=nil||route.Target!="deepseek"{t.Fatalf("disabled exact rule should fall back to ZRO wildcard: %+v %v",route,e)}
- if _,e=s.RouteForProvider("other","not-a-provider");!errors.Is(e,ErrNotFound){t.Fatalf("unknown selector: %v",e)}
+ // Lower the APInex priority; it must now be tried first.
+ _,err=s.SaveProvider(Provider{ID:p2.ID,Name:p2.Name,BaseURL:p2.BaseURL,APIType:p2.APIType,Priority:1})
+ if err!=nil{t.Fatal(err)}
+ routes,err=s.RoutesFor("claude-sonnet-4-5")
+ if err!=nil||routes[0].ProviderID!=p2.ID||routes[0].Target!="glm-exact"{t.Fatalf("priority update ignored: %+v %v",routes,err)}
+ off:=false
+ _,err=s.SaveProvider(Provider{ID:p2.ID,Name:p2.Name,BaseURL:p2.BaseURL,APIType:p2.APIType,Priority:1,Enabled:&off})
+ if err!=nil{t.Fatal(err)}
+ routes,err=s.RoutesFor("claude-sonnet-4-5")
+ if err!=nil||len(routes)!=1||routes[0].ProviderID!=p1.ID{t.Fatalf("disabled Provider should be excluded: %+v %v",routes,err)}
 }
 
-func TestProviderScopedExactAliasesAndModelDiscovery(t *testing.T){
+func TestAutomaticProviderFailoverOnCreditsAndRateLimit(t *testing.T){
+ var seen []string
+ upstream:=httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
+  var doc map[string]any
+  if err:=json.NewDecoder(r.Body).Decode(&doc);err!=nil{t.Error(err);return}
+  model,_:=doc["model"].(string)
+  seen=append(seen,model)
+  switch model{
+  case "first-model":
+   w.Header().Set("Content-Type","application/json")
+   w.WriteHeader(402)
+   _,_=w.Write([]byte(`{"error":{"code":"insufficient_credits"}}`))
+  case "second-model":
+   w.Header().Set("Content-Type","application/json")
+   _,_=w.Write([]byte(`{"id":"msg_2","type":"message","role":"assistant","content":[{"type":"text","text":"second provider succeeded"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":2}}`))
+  default:t.Errorf("unexpected model %q",model)
+  }
+ }))
+ defer upstream.Close()
  s:=testStore(t)
- p1,e:=s.SaveProvider(Provider{Name:"ZRO",BaseURL:"https://zro.example",APIKey:"key-one"})
+ p1,e:=s.SaveProvider(Provider{Name:"First",BaseURL:upstream.URL,Priority:10,APIKey:"first-key"})
  if e!=nil{t.Fatal(e)}
- p2,e:=s.SaveProvider(Provider{Name:"APInex",BaseURL:"https://apinex.example",APIKey:"key-two"})
+ p2,e:=s.SaveProvider(Provider{Name:"Second",BaseURL:upstream.URL,Priority:20,APIKey:"second-key"})
  if e!=nil{t.Fatal(e)}
- g,e:=s.SaveGateway(Gateway{Name:"Models"})
+ g,e:=s.SaveGateway(Gateway{Name:"Claude"})
  if e!=nil{t.Fatal(e)}
  if e=s.ActivateGateway(g.ID);e!=nil{t.Fatal(e)}
- for _,provider:=range []Provider{p1,p2}{
-  if _,e=s.SaveAlias(Alias{GatewayID:g.ID,ProviderID:provider.ID,Incoming:"claude-sonnet-4-5",Target:provider.Name+"-model",Enabled:true});e!=nil{t.Fatal(e)}
+ for _,item:=range []struct{p Provider;model string}{{p1,"first-model"},{p2,"second-model"}}{
+  if _,e=s.SaveAlias(Alias{GatewayID:g.ID,ProviderID:item.p.ID,Incoming:"*",Target:item.model,Enabled:true});e!=nil{t.Fatal(e)}
  }
- if _,e=s.RouteFor("claude-sonnet-4-5");!errors.Is(e,ErrAmbiguousProvider){t.Fatalf("duplicate exact should not route arbitrarily: %v",e)}
- models,e:=s.ActiveModels()
+ app:=&App{store:s,client:upstream.Client()}
+ invoke:=func()string{
+  r:=httptest.NewRequest("POST","/v1/messages",bytes.NewReader([]byte(`{"model":"claude-opus-4-5","max_tokens":30,"messages":[{"role":"user","content":"Hi"}]}`)))
+  r.Header.Set("Authorization","Bearer "+g.ClientKey)
+  w:=httptest.NewRecorder()
+  app.messages(w,r)
+  if w.Code!=200{t.Fatalf("proxy status %d %s",w.Code,w.Body.String())}
+  return w.Body.String()
+ }
+ if !strings.Contains(invoke(),"second provider succeeded"){t.Fatal("automatic failover did not reach second Provider")}
+ if strings.Join(seen,",")!="first-model,second-model"{t.Fatalf("wrong attempts: %v",seen)}
+ keys,e:=s.ProviderKeys(p1.ID)
+ if e!=nil||keys[0].Status!="billing_blocked"{t.Fatalf("first Provider key not marked exhausted: %+v %v",keys,e)}
+ if !strings.Contains(invoke(),"second provider succeeded"){t.Fatal("second call failed")}
+ if strings.Join(seen,",")!="first-model,second-model,second-model"{t.Fatalf("blocked Provider key was retried: %v",seen)}
+}
+
+func TestAutomaticFallbackWhenProviderHasNoActiveKeys(t *testing.T){
+ s:=testStore(t)
+ a,e:=s.SaveProvider(Provider{Name:"A",BaseURL:"https://a.example",APIKey:"key-a",Priority:1})
  if e!=nil{t.Fatal(e)}
- if len(models)!=0{t.Fatalf("ambiguous models should not be listed by default: %v",models)}
- g.DefaultProviderID=p2.ID
- if _,e=s.SaveGateway(Gateway{ID:g.ID,Name:g.Name,Port:g.Port,InputType:g.InputType,DefaultProviderID:p2.ID});e!=nil{t.Fatal(e)}
- models,e=s.ActiveModels()
- if e!=nil||len(models)!=1||models[0]!="claude-sonnet-4-5"{t.Fatalf("default Provider should filter discoverable models: %v %v",models,e)}
- route,e:=s.RouteFor("claude-sonnet-4-5")
- if e!=nil||route.ProviderID!=p2.ID{t.Fatalf("wrong default Provider: %+v %v",route,e)}
+ b,e:=s.SaveProvider(Provider{Name:"B",BaseURL:"https://b.example",APIKey:"key-b",Priority:2})
+ if e!=nil{t.Fatal(e)}
+ g,e:=s.SaveGateway(Gateway{Name:"G"})
+ if e!=nil{t.Fatal(e)}
+ if e=s.ActivateGateway(g.ID);e!=nil{t.Fatal(e)}
+ for _,item:=range []struct{p Provider;model string}{{a,"a-target"},{b,"b-target"}}{
+  if _,e=s.SaveAlias(Alias{GatewayID:g.ID,ProviderID:item.p.ID,Incoming:"*",Target:item.model,Enabled:true});e!=nil{t.Fatal(e)}
+ }
+ keys,e:=s.ProviderKeys(a.ID)
+ if e!=nil{t.Fatal(e)}
+ if e=s.DeleteProviderKey(a.ID,keys[0].ID);e!=nil{t.Fatal(e)}
+ routes,e:=s.RoutesFor("random-model")
+ if e!=nil||len(routes)!=2{t.Fatalf("no-key Provider remains configured but should be skipped by runtime: %+v %v",routes,e)}
+ usable,e:=s.EligibleProviderKeys(a.ID)
+ if e!=ErrNoUsableKeys||len(usable)!=0{t.Fatalf("missing first Provider should yield no keys: %+v %v",usable,e)}
 }
 
 func TestUpgradeLegacyAliasUniquenessPreservesData(t *testing.T){
@@ -117,41 +153,3 @@ func TestUpgradeLegacyAliasUniquenessPreservesData(t *testing.T){
  if err!=nil||len(aliases)!=2{t.Fatalf("migrated data lost on restart: %+v %v",aliases,err)}
 }
 
-func TestGatewayRequiresExplicitProviderWhenMultipleWildcards(t *testing.T){
- first:=httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
-  _,_ = w.Write([]byte(`{"id":"zro","type":"message","role":"assistant","content":[{"type":"text","text":"ZRO reply"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":2}}`))
- }))
- defer first.Close()
- second:=httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
-  _,_ = w.Write([]byte(`{"id":"apx","type":"message","role":"assistant","content":[{"type":"text","text":"APInex reply"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":2}}`))
- }))
- defer second.Close()
- s:=testStore(t)
- p1,e:=s.SaveProvider(Provider{Name:"ZRO",BaseURL:first.URL,APIKey:"zro"})
- if e!=nil{t.Fatal(e)}
- p2,e:=s.SaveProvider(Provider{Name:"APInex",BaseURL:second.URL,APIKey:"apx"})
- if e!=nil{t.Fatal(e)}
- g,e:=s.SaveGateway(Gateway{Name:"Claude"})
- if e!=nil{t.Fatal(e)}
- if e=s.ActivateGateway(g.ID);e!=nil{t.Fatal(e)}
- for _,item:=range []struct{provider Provider;target string}{{p1,"deepseek"},{p2,"glm-5.3"}}{
-  if _,e=s.SaveAlias(Alias{GatewayID:g.ID,ProviderID:item.provider.ID,Incoming:"*",Target:item.target,Enabled:true});e!=nil{t.Fatal(e)}
- }
- a:=&App{store:s,client:first.Client()}
- invoke:=func(provider string)(int,string){
-  request:=httptest.NewRequest("POST","/v1/messages",bytes.NewReader([]byte(`{"model":"claude-sonnet-4-5","max_tokens":30,"messages":[{"role":"user","content":"Hi"}]}`)))
-  request.Header.Set("Authorization","Bearer "+g.ClientKey)
-  if provider!=""{request.Header.Set("X-AliasPort-Provider",provider)}
-  response:=httptest.NewRecorder()
-  a.messages(response,request)
-  return response.Code,response.Body.String()
- }
- code,body:=invoke("")
- if code!=409||!strings.Contains(body,"multiple providers"){t.Fatalf("ambiguous request should return HTTP 409: %d %s",code,body)}
- code,body=invoke(p1.ID)
- if code!=200||!strings.Contains(body,"ZRO reply"){t.Fatalf("ZRO explicit header did not work: %d %s",code,body)}
- code,body=invoke("APInex")
- if code!=200||!strings.Contains(body,"APInex reply"){t.Fatalf("APInex selector did not work: %d %s",code,body)}
- var jsonBody map[string]any
- if err:=json.Unmarshal([]byte(body),&jsonBody);err!=nil{t.Fatal(err)}
-}
