@@ -171,8 +171,12 @@ func(s *Store)SaveProvider(p Provider)(Provider,error){
  return p,nil
 }
 func(s *Store)DeleteProvider(id string)error{
- r,e:=s.db.Exec("DELETE FROM providers WHERE id=?",id);if e!=nil{return e}
- n,_:=r.RowsAffected();if n==0{return ErrNotFound};return nil
+ tx,e:=s.db.Begin();if e!=nil{return e}
+ defer tx.Rollback()
+ if _,e=tx.Exec("UPDATE gateways SET default_provider_id='' WHERE default_provider_id=?",id);e!=nil{return e}
+ r,e:=tx.Exec("DELETE FROM providers WHERE id=?",id);if e!=nil{return e}
+ n,_:=r.RowsAffected();if n==0{return ErrNotFound}
+ return tx.Commit()
 }
 func(s *Store)Gateways()([]Gateway,error){
  rows,e:=s.db.Query("SELECT id,name,active,port,input_type,default_provider_id FROM gateways ORDER BY created_at,id");if e!=nil{return nil,e};defer rows.Close()
