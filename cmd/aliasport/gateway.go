@@ -3,12 +3,10 @@ package main
 import (
  "bytes"
  "crypto/subtle"
- "database/sql"
  "encoding/json"
  "errors"
  "fmt"
  "io"
- "net"
  "net/http"
  "strconv"
  "strings"
@@ -26,26 +24,23 @@ func authorized(r *http.Request,hash string)bool{
  return subtle.ConstantTimeCompare([]byte(incoming),[]byte(hash))==1 && localClientKey(r)!=""
 }
 func (a *App) gatewayAuth(w http.ResponseWriter,r *http.Request)(Gateway,bool){
- g,err:=a.store.ActiveGateway()
- if errors.Is(err,ErrNotFound){apiError(w,503,"no active gateway; activate a profile in AliasPort");return Gateway{},false}
+ gateways,err:=a.store.ActiveGateways()
  if err!=nil{apiError(w,500,"gateway unavailable");return Gateway{},false}
- // A drained listener on the previous profile's port must not accept a new
- // request after a profile switch. In-flight responses are unaffected.
- if addr,ok:=r.Context().Value(http.LocalAddrContextKey).(net.Addr);ok{
-  if tcp,ok:=addr.(*net.TCPAddr);ok && tcp.Port!=g.Port{
-   apiError(w,503,"gateway profile switched to a different port");return Gateway{},false
-  }
+ if len(gateways)==0{apiError(w,503,"no active Gateway; activate a profile in AliasPort");return Gateway{},false}
+ scopedID,_:=r.Context().Value(gatewayContextKey{}).(string)
+ for _,g:=range gateways{
+  if scopedID!="" && g.ID!=scopedID{continue}
+  hash,err:=a.store.GatewayAuthHash(g.ID)
+  if err!=nil{apiError(w,500,"gateway credentials unavailable");return Gateway{},false}
+  if authorized(r,hash){return g,true}
  }
- hash,err:=a.store.ActiveAuth()
- if errors.Is(err,sql.ErrNoRows){apiError(w,503,"gateway unavailable");return Gateway{},false}
- if err!=nil{apiError(w,500,"gateway unavailable");return Gateway{},false}
- if !authorized(r,hash){apiError(w,401,"invalid local gateway API key");return Gateway{},false}
- return g,true
+ apiError(w,401,"invalid local Gateway API key for this Gateway")
+ return Gateway{},false
 }
 func (a *App) models(w http.ResponseWriter,r *http.Request){
  if r.Method!="GET"{w.Header().Set("Allow","GET");apiError(w,405,"method not allowed");return}
  gateway,ok:=a.gatewayAuth(w,r);if !ok{return}
- ids,err:=a.store.ActiveModels()
+ ids,err:=a.store.ModelsForGateway(gateway.ID)
  if err!=nil{apiError(w,500,"cannot list models");return}
  data:=make([]map[string]any,0,len(ids))
  for _,id:=range ids{
@@ -89,7 +84,7 @@ func(a *App)handleGateway(w http.ResponseWriter,r *http.Request,inputType string
  if err!=nil{status=400;apiError(w,status,"invalid JSON request");return}
  incoming=str(original["model"])
  if incoming==""{status=400;apiError(w,status,"model is required");return}
- routes,err:=a.store.RoutesFor(incoming)
+ routes,err:=a.store.RoutesForGateway(gateway.ID,incoming)
  if errors.Is(err,ErrNotFound){status=400;apiError(w,status,"no enabled Provider has an alias for this model (exact or *)");return}
  if err!=nil{status=502;apiError(w,status,"cannot load Provider routes");return}
  countTokens:=r.URL.Path=="/v1/messages/count_tokens"
