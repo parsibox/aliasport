@@ -20,11 +20,14 @@ The browser opens automatically. The built Windows executable uses `-H windowsgu
 
 ## Quick setup
 
-1. Create a provider named ZRO, with base URL `https://zro.moonmath.ai` and your ZRO API key.
-2. Create a gateway profile, copy its **local client key** (displayed once).
-3. Add the incoming model alias (such as `claude-sonnet-5`) mapped to a ZRO model (such as `deepseek-v4.1-flash`).
-4. Activate the gateway profile.
-5. In Claude Desktop, set Gateway base URL to `http://127.0.0.1:18765`, static bearer API key to the gateway's local client key, and manually configure model IDs matching your incoming aliases.
+1. Create a provider named ZRO with base URL `https://zro.moonmath.ai` and the **first** ZRO API key.
+2. Under **کلیدهای API و چرخش خودکار**, add backup ZRO keys, give them labels and numeric priorities, and enable them.
+3. Create a gateway profile. Use a **custom local client key** (24–256 printable ASCII characters) or leave the field blank to generate one; copy it (displayed once).
+4. Add the incoming model alias (such as `claude-sonnet-5`) mapped to a ZRO model (such as `deepseek-v4.1-flash`).
+5. Activate the gateway profile.
+6. In Claude Desktop, set Gateway base URL to `http://127.0.0.1:18765`, static bearer API key to the **local** gateway client key, and manually configure the model IDs matching your aliases.
+
+When an upstream key receives a verified billing error, it is quarantined and the request is retried with the next eligible key. Keys stay blocked until manually reset. Ordinary 429 rate limits and errors after streaming begins do **not** cause rotation. See [API key rotation and billing behavior](docs/KEY_ROTATION.md).
 
 `GET /v1/models` and `POST /v1/messages` are supported; requests can stream. The gateway also forwards `POST /v1/messages/count_tokens` for upstreams that implement it.
 
