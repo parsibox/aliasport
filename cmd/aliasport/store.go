@@ -155,20 +155,30 @@ func(s *Store)Gateways()([]Gateway,error){
  for rows.Next(){var g Gateway;if e=rows.Scan(&g.ID,&g.Name,&g.Active);e!=nil{return nil,e};results=append(results,g)}
  return results,rows.Err()
 }
+func validateClientKey(key string)error{
+ if len(key)<24 || len(key)>256 {return errors.New("custom client key must be 24–256 characters")}
+ for _,char:=range key {
+  if char<33 || char>126{return errors.New("client key must contain printable ASCII characters without spaces")}
+ }
+ return nil
+}
 func(s *Store)SaveGateway(g Gateway)(Gateway,error){
  g.Name=strings.TrimSpace(g.Name)
  if g.Name==""||len(g.Name)>120{return Gateway{},errors.New("gateway name must be 1–120 characters")}
  if g.ID=="" {
-  g.ID=newID();g.ClientKey=newClientKey()
+  if g.ClientKey==""{g.ClientKey=newClientKey()} else if e:=validateClientKey(g.ClientKey);e!=nil{return Gateway{},e}
+  g.ID=newID()
   _,e:=s.db.Exec("INSERT INTO gateways(id,name,client_hash) VALUES(?,?,?)",g.ID,g.Name,hashKey(g.ClientKey))
   return g,e
  }
+ if g.ClientKey!=""{return Gateway{},errors.New("rotate client keys using the rotate action")}
  r,e:=s.db.Exec("UPDATE gateways SET name=? WHERE id=?",g.Name,g.ID)
  if e!=nil{return Gateway{},e};n,_:=r.RowsAffected();if n==0{return Gateway{},ErrNotFound}
  return g,nil
 }
-func(s *Store)RotateKey(id string)(string,error){
- key:=newClientKey()
+func(s *Store)RotateKey(id,customKey string)(string,error){
+ key:=customKey
+ if key==""{key=newClientKey()} else if e:=validateClientKey(key);e!=nil{return "",e}
  r,e:=s.db.Exec("UPDATE gateways SET client_hash=? WHERE id=?",hashKey(key),id)
  if e!=nil{return "",e};n,_:=r.RowsAffected();if n==0{return "",ErrNotFound}
  return key,nil
