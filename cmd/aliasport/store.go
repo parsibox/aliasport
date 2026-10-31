@@ -130,8 +130,8 @@ func(s *Store)SaveProvider(p Provider)(Provider,error){
   p.ID=newID()
   tx,e:=s.db.Begin();if e!=nil{return Provider{},e}
   defer tx.Rollback()
-  if _,e=tx.Exec("INSERT INTO providers(id,name,base_url,secret) VALUES(?,?,?,?)",
-   p.ID,p.Name,p.BaseURL,cipher);e!=nil{return Provider{},e}
+  if _,e=tx.Exec("INSERT INTO providers(id,name,base_url,secret) VALUES(?,?,?,X'')",
+   p.ID,p.Name,p.BaseURL);e!=nil{return Provider{},e}
   if _,e=tx.Exec(`INSERT INTO provider_keys(id,provider_id,label,secret,fingerprint,priority,enabled,status)
    VALUES(?,?,?,?,?,0,1,'ready')`,newID(),p.ID,"Primary",cipher,secretFingerprint([]byte(p.APIKey)));e!=nil{return Provider{},e}
   if e=tx.Commit();e!=nil{return Provider{},e}
@@ -146,7 +146,7 @@ func(s *Store)SaveProvider(p Provider)(Provider,error){
   cipher,e:=sealSecret([]byte(p.APIKey));if e!=nil{return Provider{},e}
   tx,e:=s.db.Begin();if e!=nil{return Provider{},e}
   defer tx.Rollback()
-  result,e:=tx.Exec("UPDATE providers SET name=?,base_url=?,secret=? WHERE id=?",p.Name,p.BaseURL,cipher,p.ID)
+  result,e:=tx.Exec("UPDATE providers SET name=?,base_url=?,secret=X'' WHERE id=?",p.Name,p.BaseURL,p.ID)
   if e!=nil{return Provider{},e}
   n,_:=result.RowsAffected();if n==0{return Provider{},ErrNotFound}
   var max sql.NullInt64
