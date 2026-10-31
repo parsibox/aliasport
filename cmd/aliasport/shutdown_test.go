@@ -36,7 +36,7 @@ func TestShutdownRequiresLocalConfirmation(t *testing.T) {
   name,method,body,origin,action string
   expected int
  }{
-  {"GET disallowed","GET","","","","",405},
+  {"GET disallowed","GET","","","",405},
   {"missing origin","POST",`{"confirm":"shutdown"}`,"","shutdown",403},
   {"cross origin","POST",`{"confirm":"shutdown"}`,"http://evil.example","shutdown",403},
   {"missing action header","POST",`{"confirm":"shutdown"}`,origin,"",403},
