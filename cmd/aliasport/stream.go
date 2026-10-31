@@ -3,6 +3,7 @@ package main
 import (
  "bufio"
  "encoding/json"
+ "encoding/json"
  "fmt"
  "io"
  "net/http"
@@ -43,11 +44,12 @@ func scanEvents(source io.Reader,receive func(event string,data []byte)error)err
 func emitAnthropicFromChat(w http.ResponseWriter,source io.Reader,target string)error{
  id:="msg_aliasport_"+newID()
  started:=false
- textIndex:=-1
- blockCounter:=0
- toolBlocks:=map[int]int{}
+ textStarted:=false
  stopReason:="end_turn"
  promptTokens,completionTokens:=0,0
+ type pendingTool struct{id,name,args string}
+ toolCalls:=map[int]*pendingTool{}
+ order:=[]int{}
  start:=func()error{
   if started{return nil}
   started=true
@@ -57,7 +59,7 @@ func emitAnthropicFromChat(w http.ResponseWriter,source io.Reader,target string)
    "usage":map[string]int{"input_tokens":promptTokens,"output_tokens":0},
   }},false)
  }
- eventErr:=scanEvents(source,func(_ string,data []byte)error{
+ err:=scanEvents(source,func(_ string,data []byte)error{
   if string(data)=="[DONE]"{return nil}
   m,err:=parseObject(data);if err!=nil{return err}
   if val:=str(m["id"]);val!=""&&!started{id=val}
@@ -67,40 +69,61 @@ func emitAnthropicFromChat(w http.ResponseWriter,source io.Reader,target string)
   if err=start();err!=nil{return err}
   for _,raw:=range items(m["choices"]){
    choice:=object(raw)
-   if index:=count(choice["index"]);index!=0{continue}
+   if count(choice["index"])!=0{continue}
    delta:=object(choice["delta"])
-   if part:=str(delta["content"]);part!="" {
-    if textIndex<0{
-     textIndex=blockCounter;blockCounter++
-     if err=sendSSE(w,"content_block_start",map[string]any{"type":"content_block_start","index":textIndex,"content_block":map[string]any{"type":"text","text":""}},false);err!=nil{return err}
+   if part:=str(delta["content"]);part!=""{
+    if !textStarted{
+     textStarted=true
+     if err=sendSSE(w,"content_block_start",map[string]any{"type":"content_block_start","index":0,
+      "content_block":map[string]any{"type":"text","text":""}},false);err!=nil{return err}
     }
-    if err=sendSSE(w,"content_block_delta",map[string]any{"type":"content_block_delta","index":textIndex,"delta":map[string]any{"type":"text_delta","text":part}},false);err!=nil{return err}
+    if err=sendSSE(w,"content_block_delta",map[string]any{"type":"content_block_delta","index":0,
+      "delta":map[string]any{"type":"text_delta","text":part}},false);err!=nil{return err}
    }
-   for _,tr:=range items(delta["tool_calls"]){
-    tool:=object(tr);i:=count(tool["index"])
-    index,exists:=toolBlocks[i]
-    fn:=object(tool["function"])
+   for _,rawTool:=range items(delta["tool_calls"]){
+    tool:=object(rawTool)
+    i:=count(tool["index"])
+    pending,exists:=toolCalls[i]
     if !exists{
-     index=blockCounter;blockCounter++;toolBlocks[i]=index
-     identifier:=str(tool["id"]);if identifier==""{identifier="call_"+newID()}
-     if err=sendSSE(w,"content_block_start",map[string]any{"type":"content_block_start","index":index,"content_block":map[string]any{
-      "type":"tool_use","id":identifier,"name":str(fn["name"]),"input":map[string]any{},
-     }},false);err!=nil{return err}
+     pending=&pendingTool{}
+     toolCalls[i]=pending
+     order=append(order,i)
     }
-    if chunk:=str(fn["arguments"]);chunk!=""{
-     if err=sendSSE(w,"content_block_delta",map[string]any{"type":"content_block_delta","index":index,"delta":map[string]any{"type":"input_json_delta","partial_json":chunk}},false);err!=nil{return err}
-    }
+    if value:=str(tool["id"]);value!=""{pending.id=value}
+    fn:=object(tool["function"])
+    if name:=str(fn["name"]);name!=""{pending.name=name}
+    pending.args+=str(fn["arguments"])
    }
    if reason:=str(choice["finish_reason"]);reason!=""{stopReason=mapStopToAnthropic(reason)}
   }
   return nil
  })
- if eventErr!=nil{return eventErr}
- if err:=start();err!=nil{return err}
- // Each content block must be closed before sending the final message delta.
- if textIndex>=0{if err:=sendSSE(w,"content_block_stop",map[string]any{"type":"content_block_stop","index":textIndex},false);err!=nil{return err}}
- for _,idx:=range toolBlocks{if err:=sendSSE(w,"content_block_stop",map[string]any{"type":"content_block_stop","index":idx},false);err!=nil{return err}}
- if err:=sendSSE(w,"message_delta",map[string]any{"type":"message_delta","delta":map[string]any{"stop_reason":stopReason,"stop_sequence":nil},"usage":map[string]any{"output_tokens":completionTokens}},false);err!=nil{return err}
+ if err!=nil{return err}
+ if err=start();err!=nil{return err}
+ if textStarted{
+  if err=sendSSE(w,"content_block_stop",map[string]any{"type":"content_block_stop","index":0},false);err!=nil{return err}
+ }
+ // OpenAI Chat chunks can interleave arguments for several tools. Buffer their
+ // JSON fragments so that Anthropic blocks remain strictly sequential.
+ for i,sourceIndex:=range order{
+  tool:=toolCalls[sourceIndex]
+  index:=i
+  if textStarted{index++}
+  if tool.id==""{tool.id="toolu_aliasport_"+newID()}
+  if tool.name==""{return fmt.Errorf("OpenAI tool call has no function name")}
+  if err=sendSSE(w,"content_block_start",map[string]any{"type":"content_block_start","index":index,
+   "content_block":map[string]any{"type":"tool_use","id":tool.id,"name":tool.name,"input":map[string]any{}}},false);err!=nil{return err}
+  arguments:=tool.args
+  if arguments==""{arguments="{}"}
+  if !json.Valid([]byte(arguments)){return fmt.Errorf("OpenAI tool call returned invalid JSON arguments")}
+  if err=sendSSE(w,"content_block_delta",map[string]any{"type":"content_block_delta","index":index,
+   "delta":map[string]any{"type":"input_json_delta","partial_json":arguments}},false);err!=nil{return err}
+  if err=sendSSE(w,"content_block_stop",map[string]any{"type":"content_block_stop","index":index},false);err!=nil{return err}
+ }
+ if len(order)>0{stopReason="tool_use"}
+ if err=sendSSE(w,"message_delta",map[string]any{"type":"message_delta",
+  "delta":map[string]any{"stop_reason":stopReason,"stop_sequence":nil},
+  "usage":map[string]any{"output_tokens":completionTokens}},false);err!=nil{return err}
  return sendSSE(w,"message_stop",map[string]any{"type":"message_stop"},false)
 }
 
