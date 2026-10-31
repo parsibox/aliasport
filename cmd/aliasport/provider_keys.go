@@ -180,7 +180,8 @@ func(s *Store) ResetProviderKey(providerID,id string)error{
 func(s *Store) EligibleProviderKeys(providerID string)([]UpstreamKey,error){
  rows,err:=s.db.Query(`SELECT id,secret FROM provider_keys
  WHERE provider_id=? AND enabled=1 AND status='ready'
- ORDER BY priority ASC,created_at ASC,id ASC`,providerID)
+ AND (rate_limit_until IS NULL OR rate_limit_until<=?)
+ ORDER BY priority ASC,created_at ASC,id ASC`,providerID,time.Now().UTC().Format(time.RFC3339))
  if err!=nil{return nil,err}
  defer rows.Close()
  var results []UpstreamKey
@@ -199,6 +200,15 @@ func(s *Store) EligibleProviderKeys(providerID string)([]UpstreamKey,error){
 func(s *Store) BlockBillingKey(providerID,id string)error{
  _,err:=s.db.Exec(`UPDATE provider_keys SET status='billing_blocked',last_billing_at=?
  WHERE provider_id=? AND id=? AND status='ready'`,time.Now().Format(time.RFC3339),providerID,id)
+ return err
+}
+// MarkKeyRateLimited temporarily excludes a credential, but unlike billing
+// exhaustion it automatically becomes eligible again after the cooldown.
+func(s *Store)MarkKeyRateLimited(providerID,id string,cooldown time.Duration)error{
+ if cooldown<time.Second{cooldown=time.Second}
+ if cooldown>5*time.Minute{cooldown=5*time.Minute}
+ _,err:=s.db.Exec("UPDATE provider_keys SET rate_limit_until=? WHERE id=? AND provider_id=?",
+  time.Now().UTC().Add(cooldown).Format(time.RFC3339),id,providerID)
  return err
 }
 func(s *Store) MarkKeyUsed(providerID,id string) {
