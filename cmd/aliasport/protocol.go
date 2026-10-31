@@ -57,7 +57,7 @@ func(s *Store)migrateProtocols()error{
 func providerEndpoint(baseURL,protocol,endpoint string)(string,error){
  if err:=validateProtocol(protocol);err!=nil{return "",err}
  if endpoint!="/v1/messages" && endpoint!="/v1/messages/count_tokens" &&
-  endpoint!="/v1/chat/completions" && endpoint!="/v1/models" {
+  endpoint!="/v1/chat/completions" && endpoint!="/v1/models" && endpoint!="/v1/balance" {
   return "",errors.New("unsupported upstream endpoint")
  }
  parsed,err:=url.Parse(baseURL)
