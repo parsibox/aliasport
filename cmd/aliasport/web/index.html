@@ -242,7 +242,7 @@ function matchesListSearch(needle,values){
  return tokens.every(token=>combined.includes(token));
 }
 function visibleProviders(){
- return state.providers.filter(p=>matchesListSearch(listFilters.providersSearch,[p.name,p.base_url,p.api_type,protocolLabel(p.api_type)]));
+ return state.providers.filter(p=>matchesListSearch(listFilters.providersSearch,[p.name,p.base_url,p.api_type,protocolLabel(p.api_type),...(p.gateway_ids||[]).map(id=>state.gateways.find(g=>g.id===id)?.name||'')]));
 }
 function visibleGateways(){
  return state.gateways.filter(g=>matchesListSearch(listFilters.gatewaysSearch,[g.name,g.port,g.input_type,protocolLabel(g.input_type),g.active?'فعال':'غیرفعال']));
@@ -284,7 +284,7 @@ function render(){
  $('stat-gateways').textContent=state.overview.gateways;
  $('stat-aliases').textContent=state.overview.aliases;
  $('stat-active').textContent=state.overview.active_gateway||'تنظیم نشده';
- $('dashboard-proxy-url').textContent=state.overview.gateway_url||'هنوز Gateway فعالی انتخاب نشده';
+ $('dashboard-proxy-url').textContent=(state.overview.gateway_urls||[]).join(' ، ')||state.overview.gateway_url||'هنوز Gateway فعالی انتخاب نشده';
  const p=state.providers,g=state.gateways,a=state.aliases;
  refreshSelectOptions('keys-filter-provider',p,'همه Providerها','keysProvider');
  refreshSelectOptions('aliases-filter-provider',p,'همه Providerها','aliasesProvider');
