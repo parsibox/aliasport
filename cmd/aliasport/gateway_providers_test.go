@@ -32,6 +32,7 @@ func TestProviderAssignedToMultipleGatewaysAndIsolated(t *testing.T){
  if e=s.ActivateGateway(g2.ID);e!=nil{t.Fatal(e)}
  for _,row:=range []struct{gateway,provider,target string}{
   {g1.ID,p.ID,"claude-target"},
+  {g1.ID,other.ID,"other-claude-target"},
   {g2.ID,p.ID,"openai-target"},
   {g2.ID,other.ID,"disallowed"},
  }{
@@ -41,7 +42,9 @@ func TestProviderAssignedToMultipleGatewaysAndIsolated(t *testing.T){
  // Other from Gateway 2, without deleting the alias or affecting Gateway 1.
  if e=s.SetProviderGateways(other.ID,[]string{g1.ID});e!=nil{t.Fatal(e)}
  routes,e:=s.RoutesForGateway(g1.ID,"any-model")
- if e!=nil||len(routes)!=2{t.Fatalf("Claude routes: %+v, %v",routes,e)}
+ if e!=nil||len(routes)!=2||routes[0].ProviderID!=other.ID||routes[0].Target!="other-claude-target"||routes[1].ProviderID!=p.ID||routes[1].Target!="claude-target"{
+  t.Fatalf("Claude should route through both allowed Providers in priority order: %+v, %v",routes,e)
+ }
  routes,e=s.RoutesForGateway(g2.ID,"any-model")
  if e!=nil||len(routes)!=1||routes[0].ProviderID!=p.ID||routes[0].Target!="openai-target"{
   t.Fatalf("OpenAI gateway leaks unassigned Provider: %+v %v",routes,e)
@@ -50,7 +53,9 @@ func TestProviderAssignedToMultipleGatewaysAndIsolated(t *testing.T){
  routes,e=s.RoutesForGateway(g2.ID,"any-model")
  if !errors.Is(e,ErrNotFound)||len(routes)!=0{t.Fatalf("unassigned shared Provider still routes: %+v %v",routes,e)}
  routes,e=s.RoutesForGateway(g1.ID,"any-model")
- if e!=nil||len(routes)!=2{t.Fatalf("Gateway 1 was affected by Gateway 2 revocation: %+v %v",routes,e)}
+ if e!=nil||len(routes)!=2||routes[0].ProviderID!=other.ID||routes[1].ProviderID!=p.ID{
+  t.Fatalf("Gateway 1 was affected by Gateway 2 revocation: %+v %v",routes,e)
+ }
  providers,e:=s.Providers()
  if e!=nil{t.Fatal(e)}
  for _,provider:=range providers{
