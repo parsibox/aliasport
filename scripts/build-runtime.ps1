@@ -151,7 +151,7 @@ function Start-Built {
     }
     $arguments = @()
     if (-not [string]::IsNullOrWhiteSpace($env:ALIASPORT_ADMIN_URL)) {
-        $arguments += ('-admin=' + $adminUri.Host + ':' + $adminUri.Port)
+        $arguments += ('-admin=' + $adminUri.Authority)
     }
     Write-Host "[startup] Launching $exe ..."
     if ($arguments.Count -gt 0) {
