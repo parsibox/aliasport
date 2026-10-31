@@ -86,8 +86,11 @@ func(a *App)handleGateway(w http.ResponseWriter,r *http.Request,inputType string
  if err!=nil{status=400;apiError(w,status,"invalid JSON request");return}
  incoming=str(content["model"])
  if incoming==""{status=400;apiError(w,status,"model is required");return}
- route,err:=a.store.RouteFor(incoming)
- if errors.Is(err,ErrNotFound){status=400;apiError(w,status,"unknown or disabled model alias");return}
+ route,err:=a.store.RouteForProvider(incoming,strings.TrimSpace(r.Header.Get("X-AliasPort-Provider")))
+ if errors.Is(err,ErrNotFound){status=400;apiError(w,status,"unknown Provider or disabled model alias for the selected Provider");return}
+ if errors.Is(err,ErrAmbiguousProvider){
+  status=409;apiError(w,status,err.Error());return
+ }
  if err!=nil{status=502;apiError(w,status,"cannot load provider configuration");return}
  if !authorized(r,route.ClientHash){status=401;apiError(w,status,"gateway profile changed; use active profile key");return}
  target=route.Target
