@@ -39,6 +39,11 @@ func secretFingerprint(secret []byte)string {
 func (s *Store) migrateProviderKeys()error {
  tx,err:=s.db.Begin();if err!=nil{return err}
  defer tx.Rollback()
+ // This migration must run ONCE. Otherwise deleting the last modern key could
+ // resurrect the obsolete providers.secret entry after application restart.
+ var version int
+ if err=tx.QueryRow("PRAGMA user_version").Scan(&version);err!=nil{return err}
+ if version>=1{return tx.Commit()}
  rows,err:=tx.Query("SELECT id,secret FROM providers WHERE length(secret)>0")
  if err!=nil{return err}
  type legacy struct {id string;secret []byte}
@@ -60,6 +65,7 @@ func (s *Store) migrateProviderKeys()error {
      VALUES(?,?,?,?,?,0,1,'ready')`,newID(),p.id,"Primary (migrated)",p.secret,secretFingerprint(plain))
   if err!=nil{return err}
  }
+ if _,err=tx.Exec("PRAGMA user_version=1");err!=nil{return err}
  return tx.Commit()
 }
 
