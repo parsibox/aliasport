@@ -70,124 +70,161 @@ func(a *App)chatCompletions(w http.ResponseWriter,r *http.Request){
  a.handleGateway(w,r,ProtocolOpenAIChat)
 }
 
+// Automatic provider routing: try providers in priority order. Each provider
+// uses its own exact alias or '*' and its ordered eligible API keys. Only known
+// pre-response failures are retried. Never replay a request after streaming or
+// when transport failure leaves upstream execution uncertain.
 func(a *App)handleGateway(w http.ResponseWriter,r *http.Request,inputType string){
  if r.Method!="POST"{w.Header().Set("Allow","POST");apiError(w,405,"method not allowed");return}
  gateway,ok:=a.gatewayAuth(w,r);if !ok{return}
  if gateway.InputType!=inputType{
-  apiError(w,404,"this gateway accepts "+gateway.InputType+" requests; change its input protocol in Gateway Profiles")
-  return
+  apiError(w,404,"this gateway accepts "+gateway.InputType+" requests");return
  }
  started:=time.Now()
  status:=500;incoming:="";target:=""
  defer func(){go a.store.LogEvent(incoming,target,status,time.Since(started))}()
  body,err:=io.ReadAll(http.MaxBytesReader(w,r.Body,32<<20))
  if err!=nil{status=413;apiError(w,status,"request body too large or unreadable");return}
- content,err:=parseObject(body)
+ original,err:=parseObject(body)
  if err!=nil{status=400;apiError(w,status,"invalid JSON request");return}
- incoming=str(content["model"])
+ incoming=str(original["model"])
  if incoming==""{status=400;apiError(w,status,"model is required");return}
- route,err:=a.store.RouteForProvider(incoming,strings.TrimSpace(r.Header.Get("X-AliasPort-Provider")))
- if errors.Is(err,ErrNotFound){status=400;apiError(w,status,"unknown Provider or disabled model alias for the selected Provider");return}
- if errors.Is(err,ErrAmbiguousProvider){
-  status=409;apiError(w,status,err.Error());return
- }
- if err!=nil{status=502;apiError(w,status,"cannot load provider configuration");return}
- if !authorized(r,route.ClientHash){status=401;apiError(w,status,"gateway profile changed; use active profile key");return}
- target=route.Target
- content["model"]=target
+ routes,err:=a.store.RoutesFor(incoming)
+ if errors.Is(err,ErrNotFound){status=400;apiError(w,status,"no enabled Provider has an alias for this model (exact or *)");return}
+ if err!=nil{status=502;apiError(w,status,"cannot load Provider routes");return}
  countTokens:=r.URL.Path=="/v1/messages/count_tokens"
- if countTokens && route.ProviderType!=ProtocolAnthropic{
-  status=501;apiError(w,status,"count_tokens cannot be translated to OpenAI Chat Completions; use an Anthropic provider");return
- }
- payload:=content
- if !countTokens{
-  payload,err=convertRequest(inputType,route.ProviderType,content)
-  if err!=nil{
-   status=422;apiError(w,status,err.Error());return
-  }
- }
- outgoing,err:=json.Marshal(payload)
- if err!=nil{status=400;apiError(w,status,"unable to encode message");return}
- path:="/v1/messages"
- if !countTokens&&route.ProviderType==ProtocolOpenAIChat{path="/v1/chat/completions"}
- if countTokens{path="/v1/messages/count_tokens"}
- url,err:=providerEndpoint(route.BaseURL,route.ProviderType,path)
- if err!=nil{status=502;apiError(w,status,"invalid provider endpoint");return}
- // Query strings aren't needed for normal Chat or Anthropic Messages requests,
- // but preserve any explicitly supplied parameters.
- if r.URL.RawQuery!=""{url+="?"+r.URL.RawQuery}
- keys,err:=a.store.EligibleProviderKeys(route.ProviderID)
- if errors.Is(err,ErrNoUsableKeys){status=503;apiError(w,status,"no usable provider API keys (disabled or billing blocked)");return}
- if err!=nil{status=502;apiError(w,status,"cannot read provider API keys");return}
- for index,key:=range keys{
+ hadEligible:=false
+ hadConversion:=false
+ lastStatus:=503
+ lastMessage:="no eligible Provider API keys; enable a Provider and its keys"
+ for _,route:=range routes{
   if r.Context().Err()!=nil{return}
-  req,reqErr:=http.NewRequestWithContext(r.Context(),"POST",url,bytes.NewReader(outgoing))
-  if reqErr!=nil{status=500;apiError(w,status,"request could not be prepared");return}
-  req.Header.Set("Content-Type","application/json")
-  if accept:=r.Header.Get("Accept");accept!=""{req.Header.Set("Accept",accept)}
-  req.Header.Set("Authorization","Bearer "+string(key.Secret))
-  if route.ProviderType==ProtocolAnthropic{
-   req.Header.Set("anthropic-version",r.Header.Get("anthropic-version"))
-   if req.Header.Get("anthropic-version")==""{req.Header.Set("anthropic-version","2023-06-01")}
-   if v:=r.Header.Get("anthropic-beta");v!=""{req.Header.Set("anthropic-beta",v)}
+  if !authorized(r,route.ClientHash){
+   status=401;apiError(w,status,"gateway profile changed; use active profile key");return
   }
-  req.Header.Set("User-Agent","AliasPort/0.3")
-  upstream,callErr:=a.client.Do(req)
-  if callErr!=nil{
-   status=502;apiError(w,status,"upstream connection failed (no retry for transport errors)");return
+  if countTokens&&route.ProviderType!=ProtocolAnthropic{
+   continue
   }
-  status=upstream.StatusCode
-  a.store.MarkKeyUsed(route.ProviderID,key.ID)
-  var inspected []byte
-  if status==400||status==402||status==403||status==429{
-   inspected,_=io.ReadAll(io.LimitReader(upstream.Body,131073))
-  }
-  if isBillingFailure(status,inspected){
-   _=upstream.Body.Close()
-   if e:=a.store.BlockBillingKey(route.ProviderID,key.ID);e!=nil{
-    status=502;apiError(w,status,"could not quarantine exhausted API key");return
-   }
-   if index<len(keys)-1{continue}
-   status=402;apiError(w,status,"billing failure: all provider API keys were exhausted");return
-  }
-
-  if route.ProviderType==inputType || countTokens || status<200 || status>=300 {
-   forwardUpstream(w,upstream,inspected);return
-  }
-  if payload["stream"]==true {
-   w.Header().Set("Content-Type","text/event-stream")
-   w.Header().Set("Cache-Control","no-cache")
-   w.Header().Set("X-Content-Type-Options","nosniff")
-   w.WriteHeader(200)
-   if route.ProviderType==ProtocolOpenAIChat&&inputType==ProtocolAnthropic{
-    err=emitAnthropicFromChat(w,upstream.Body,incoming)
-   }else if route.ProviderType==ProtocolAnthropic&&inputType==ProtocolOpenAIChat{
-    err=emitChatFromAnthropic(w,upstream.Body,incoming)
-   }else{err=fmt.Errorf("unsupported streaming conversion")}
-   _=upstream.Body.Close()
+  requestBody:=make(map[string]any,len(original))
+  for k,v:=range original{requestBody[k]=v}
+  requestBody["model"]=route.Target
+  payload:=requestBody
+  if !countTokens{
+   payload,err=convertRequest(inputType,route.ProviderType,requestBody)
    if err!=nil{
-    // We cannot change status after starting a stream. Emit an explicit event
-    // in the requested stream protocol, then close this connection.
-    if inputType==ProtocolAnthropic{
-     _=sendSSE(w,"error",map[string]any{"type":"error","error":map[string]any{"type":"api_error","message":err.Error()}},false)
-    }else{
-     _=sendSSE(w,"",map[string]any{"error":map[string]any{"message":err.Error()}},true)
-    }
+    hadConversion=true
+    lastStatus=422
+    lastMessage="no Provider supports all requested API features: "+err.Error()
+    continue
    }
+  }
+  outgoing,marshalErr:=json.Marshal(payload)
+  if marshalErr!=nil{status=400;apiError(w,status,"unable to encode request");return}
+  upstreamPath:="/v1/messages"
+  if !countTokens&&route.ProviderType==ProtocolOpenAIChat{upstreamPath="/v1/chat/completions"}
+  if countTokens{upstreamPath="/v1/messages/count_tokens"}
+  endpoint,urlErr:=providerEndpoint(route.BaseURL,route.ProviderType,upstreamPath)
+  if urlErr!=nil{lastStatus=502;lastMessage="invalid upstream Provider URL";continue}
+  if r.URL.RawQuery!=""{endpoint+="?"+r.URL.RawQuery}
+  keys,keyErr:=a.store.EligibleProviderKeys(route.ProviderID)
+  if errors.Is(keyErr,ErrNoUsableKeys){continue}
+  if keyErr!=nil{status=502;apiError(w,status,"cannot read Provider API keys");return}
+  for _,key:=range keys{
+   if r.Context().Err()!=nil{return}
+   hadEligible=true
+   req,reqErr:=http.NewRequestWithContext(r.Context(),"POST",endpoint,bytes.NewReader(outgoing))
+   if reqErr!=nil{status=500;apiError(w,status,"could not create upstream request");return}
+   req.Header.Set("Content-Type","application/json")
+   if accept:=r.Header.Get("Accept");accept!=""{req.Header.Set("Accept",accept)}
+   req.Header.Set("Authorization","Bearer "+string(key.Secret))
+   if route.ProviderType==ProtocolAnthropic{
+    version:=r.Header.Get("anthropic-version")
+    if version==""{version="2023-06-01"}
+    req.Header.Set("anthropic-version",version)
+    if v:=r.Header.Get("anthropic-beta");v!=""{req.Header.Set("anthropic-beta",v)}
+   }
+   req.Header.Set("User-Agent","AliasPort/0.4")
+   upstream,callErr:=a.client.Do(req)
+   if callErr!=nil{
+    // A network error does not prove the upstream did not process the POST.
+    status=502;apiError(w,status,"upstream transport failed; automatic retry suppressed to prevent duplicate charges");return
+   }
+   status=upstream.StatusCode
+   target=route.Target
+   a.store.MarkKeyUsed(route.ProviderID,key.ID)
+   var inspected []byte
+   if status==400||status==401||status==402||status==403||status==404||status==429||status==502||status==503||status==504{
+    inspected,_=io.ReadAll(io.LimitReader(upstream.Body,131073))
+   }
+   if isBillingFailure(status,inspected){
+    _=upstream.Body.Close()
+    if e:=a.store.BlockBillingKey(route.ProviderID,key.ID);e!=nil{status=502;apiError(w,status,"could not mark exhausted API key");return}
+    lastStatus=402
+    lastMessage="upstream Provider billing credits exhausted; trying next key or Provider"
+    continue
+   }
+   if status==429{
+    cooldown:=60*time.Second
+    if sec,e:=strconv.Atoi(strings.TrimSpace(upstream.Header.Get("Retry-After")));e==nil&&sec>0{
+     cooldown=time.Duration(sec)*time.Second
+    }
+    _=upstream.Body.Close()
+    if e:=a.store.MarkKeyRateLimited(route.ProviderID,key.ID,cooldown);e!=nil{status=502;apiError(w,status,"could not cooldown rate-limited key");return}
+    lastStatus=429;lastMessage="all matching Provider keys are rate-limited or temporarily unavailable"
+    continue
+   }
+   if status==401||status==403||status==404||status==502||status==503||status==504{
+    _=upstream.Body.Close()
+    lastStatus=status
+    lastMessage="matching Provider rejected or could not complete the request; trying next configured key or Provider"
+    continue
+   }
+   // Unknown errors (including HTTP 400/500) are not automatically replayed.
+   // If the upstream already produced a successful stream, it cannot be retried.
+   if route.ProviderType==inputType||countTokens||status<200||status>=300{
+    forwardUpstream(w,upstream,inspected);return
+   }
+   if payload["stream"]==true{
+    w.Header().Set("Content-Type","text/event-stream")
+    w.Header().Set("Cache-Control","no-cache")
+    w.Header().Set("X-Content-Type-Options","nosniff")
+    w.WriteHeader(status)
+    if route.ProviderType==ProtocolOpenAIChat&&inputType==ProtocolAnthropic{
+     err=emitAnthropicFromChat(w,upstream.Body,incoming)
+    }else if route.ProviderType==ProtocolAnthropic&&inputType==ProtocolOpenAIChat{
+     err=emitChatFromAnthropic(w,upstream.Body,incoming)
+    }else{err=fmt.Errorf("unsupported streaming conversion")}
+    _=upstream.Body.Close()
+    if err!=nil{
+     // Once streaming starts, never send a second upstream request.
+     if inputType==ProtocolAnthropic{
+      _=sendSSE(w,"error",map[string]any{"type":"error","error":map[string]any{"type":"api_error","message":err.Error()}},false)
+     }else{
+      _=sendSSE(w,"",map[string]any{"error":map[string]any{"message":err.Error()}},true)
+     }
+    }
+    return
+   }
+   converted,readErr:=io.ReadAll(io.LimitReader(upstream.Body,64<<20))
+   _=upstream.Body.Close()
+   if readErr!=nil{status=502;apiError(w,status,"unable to read upstream response");return}
+   result,convertErr:=convertResponse(route.ProviderType,inputType,converted,incoming)
+   if convertErr!=nil{status=502;apiError(w,status,"provider response incompatible with input protocol: "+convertErr.Error());return}
+   w.Header().Set("Content-Type","application/json")
+   w.Header().Set("X-Content-Type-Options","nosniff")
+   w.WriteHeader(status)
+   _,_=w.Write(result)
    return
   }
-  converted,readErr:=io.ReadAll(io.LimitReader(upstream.Body,64<<20))
-  _=upstream.Body.Close()
-  if readErr!=nil{status=502;apiError(w,status,"unable to read upstream response");return}
-  result,convertErr:=convertResponse(route.ProviderType,inputType,converted,incoming)
-  if convertErr!=nil{status=502;apiError(w,status,"provider response incompatible with selected protocol: "+convertErr.Error());return}
-  w.Header().Set("Content-Type","application/json")
-  w.Header().Set("X-Content-Type-Options","nosniff")
-  w.WriteHeader(status)
-  _,_=w.Write(result)
-  return
  }
- status=503;apiError(w,status,"no usable provider API keys remain")
+ if countTokens&&!hadEligible{
+  status=501;apiError(w,status,"token counting requires an available Anthropic-compatible Provider");return
+ }
+ if !hadEligible&&!hadConversion{
+  status=503;apiError(w,status,"no eligible Provider API keys. Check Provider enabled flags, credits and cooldowns");return
+ }
+ status=lastStatus
+ apiError(w,status,lastMessage)
 }
 
 func forwardUpstream(w http.ResponseWriter,upstream *http.Response,inspected []byte){
