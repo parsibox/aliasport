@@ -90,19 +90,24 @@ func TestBillingFailoverQuarantineAndReset(t *testing.T){
  keys,e=s.ProviderKeys(p.ID);if e!=nil||keys[0].Status!="ready"{t.Fatalf("reset did not clear quarantine: %v",e)}
 }
 
-func TestRateLimitDoesNotRotateCredentials(t *testing.T){
+func TestRateLimitCoolDownAndTryNextKey(t *testing.T){
  calls:=0
  handler:=func(w http.ResponseWriter,r *http.Request){
   calls++
   w.Header().Set("Content-Type","application/json")
+  w.Header().Set("Retry-After","60")
   w.WriteHeader(429)
   _,_=w.Write([]byte(`{"error":{"type":"rate_limit_error","message":"Too many requests"}}`))
  }
  s,app,g,p,_:=setupTwoKeyProxy(t,handler)
  rec:=proxyOnce(app,g.ClientKey)
- if rec.Code!=429||calls!=1{t.Fatalf("rate limit unexpectedly retried: status %d, calls %d",rec.Code,calls)}
- keys,e:=s.ProviderKeys(p.ID);if e!=nil{t.Fatal(e)}
- if keys[0].Status!="ready"{t.Fatal("rate limit quarantined a key")}
+ if rec.Code!=429||calls!=2{t.Fatalf("rate-limited keys must be tried in order: status %d, calls %d",rec.Code,calls)}
+ keys,e:=s.ProviderKeys(p.ID)
+ if e!=nil{t.Fatal(e)}
+ if keys[0].Status!="ready"||keys[1].Status!="ready"{t.Fatal("temporary rate limit permanently blocked a key")}
+ if _,e=s.EligibleProviderKeys(p.ID);e!=ErrNoUsableKeys{t.Fatalf("cooldown should temporarily skip keys, got %v",e)}
+ rec=proxyOnce(app,g.ClientKey)
+ if calls!=2||rec.Code!=503{t.Fatalf("cooldown ignored: status=%d calls=%d",rec.Code,calls)}
 }
 
 func TestProviderKeyPersistenceAndNoResurrection(t *testing.T){
