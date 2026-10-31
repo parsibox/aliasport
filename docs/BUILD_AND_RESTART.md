@@ -4,8 +4,8 @@ On Windows, `build.bat` executes the following steps:
 
 1. Check the configured local management port (default: `127.0.0.1:8787`).
 2. If something is listening, verify it is AliasPort via `GET /health` and `X-AliasPort-Admin: true`.
-3. Read the currently active Gateway port from `GET /api/overview`.
-4. Request `POST /api/shutdown` and wait for both listeners to close (up to 20 seconds).
+3. Read all active Gateway URLs from `GET /api/overview` (`gateway_urls`; old builds still use `gateway_url`).
+4. Request `POST /api/shutdown` and wait for all active Gateway listeners and the management listener to close (up to 20 seconds).
 5. Resolve Go dependencies, regenerate the ICO, run `go test ./...`, then build `dist/AliasPort.exe`.
 6. Only if compilation succeeds, launch the new EXE and verify the management health check.
 
