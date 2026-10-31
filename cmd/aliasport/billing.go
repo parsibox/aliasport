@@ -14,14 +14,16 @@ func isBillingFailure(status int, body []byte) bool {
  var value map[string]json.RawMessage
  if json.Unmarshal(body,&value)!=nil {return false}
  fields:=[]string{}
- for _,name:=range []string{"code","type","message"}{
+ for _,name:=range []string{"code","type","message","detail","reason"}{
   var v string
   if raw:=value[name];len(raw)>0 && json.Unmarshal(raw,&v)==nil {fields=append(fields,v)}
  }
  if raw:=value["error"];len(raw)>0 {
+  var simple string
+  if json.Unmarshal(raw,&simple)==nil {fields=append(fields,simple)}
   var nested map[string]json.RawMessage
   if json.Unmarshal(raw,&nested)==nil{
-   for _,name:=range []string{"code","type","message"} {
+   for _,name:=range []string{"code","type","message","detail","reason"} {
     var v string
     if b:=nested[name];len(b)>0 && json.Unmarshal(b,&v)==nil {fields=append(fields,v)}
    }
