@@ -1,0 +1,40 @@
+name: Go tests and Windows EXE
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Go tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go test ./...
+
+  windows-build:
+    name: Build Windows EXE
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build and embed icon
+        shell: cmd
+        run: build.bat
+      - name: Verify executable
+        shell: pwsh
+        run: |
+          if (-not (Test-Path dist/AliasPort.exe)) { throw "Windows EXE missing" }
+          Write-Host "EXE size:" (Get-Item dist/AliasPort.exe).Length
