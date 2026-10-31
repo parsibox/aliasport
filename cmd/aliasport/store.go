@@ -21,6 +21,7 @@ type Provider struct {
  ID string `json:"id"`
  Name string `json:"name"`
  BaseURL string `json:"base_url"`
+ APIType string `json:"api_type"`
  HasKey bool `json:"has_key"`
  APIKey string `json:"api_key,omitempty"` // accepted on write, never returned
 }
@@ -28,6 +29,8 @@ type Gateway struct{
  ID string `json:"id"`
  Name string `json:"name"`
  Active bool `json:"active"`
+ Port int `json:"port"`
+ InputType string `json:"input_type"`
  ClientKey string `json:"client_key,omitempty"` // returned ONLY on create/rotate
 }
 type Alias struct{
@@ -51,6 +54,7 @@ type Route struct {
  Target string
  BaseURL string
  ProviderID string
+ ProviderType string
 }
 var ErrNotFound=errors.New("not found")
 
@@ -94,6 +98,7 @@ func OpenStore(path string)(*Store,error){
   if _,err=db.Exec(statement);err!=nil {db.Close();return nil,fmt.Errorf("sqlite init: %w",err)}
  }
  store:=&Store{db}
+ if err=store.migrateProtocols();err!=nil{db.Close();return nil,fmt.Errorf("protocol migration: %w",err)}
  if err=store.migrateProviderKeys();err!=nil{db.Close();return nil,fmt.Errorf("provider key migration: %w",err)}
  return store,nil
 }
@@ -115,14 +120,16 @@ func validateProvider(p Provider)error{
  return nil
 }
 func(s *Store)Providers()([]Provider,error){
- rows,e:=s.db.Query("SELECT p.id,p.name,p.base_url,EXISTS(SELECT 1 FROM provider_keys k WHERE k.provider_id=p.id) FROM providers p ORDER BY p.name");if e!=nil{return nil,e};defer rows.Close()
+ rows,e:=s.db.Query("SELECT p.id,p.name,p.base_url,p.api_type,EXISTS(SELECT 1 FROM provider_keys k WHERE k.provider_id=p.id) FROM providers p ORDER BY p.name");if e!=nil{return nil,e};defer rows.Close()
  result:=[]Provider{}
- for rows.Next(){var p Provider;if e=rows.Scan(&p.ID,&p.Name,&p.BaseURL,&p.HasKey);e!=nil{return nil,e};result=append(result,p)}
+ for rows.Next(){var p Provider;if e=rows.Scan(&p.ID,&p.Name,&p.BaseURL,&p.APIType,&p.HasKey);e!=nil{return nil,e};result=append(result,p)}
  return result,rows.Err()
 }
 func(s *Store)SaveProvider(p Provider)(Provider,error){
  p.Name=strings.TrimSpace(p.Name)
  p.BaseURL=strings.TrimRight(strings.TrimSpace(p.BaseURL),"/")
+ if p.APIType==""{p.APIType=ProtocolAnthropic}
+ if e:=validateProtocol(p.APIType);e!=nil{return Provider{},e}
  if e:=validateProvider(p);e!=nil{return Provider{},e}
  if p.ID==""{
   if p.APIKey==""{return Provider{},errors.New("provider API key is required")}
@@ -130,8 +137,8 @@ func(s *Store)SaveProvider(p Provider)(Provider,error){
   p.ID=newID()
   tx,e:=s.db.Begin();if e!=nil{return Provider{},e}
   defer tx.Rollback()
-  if _,e=tx.Exec("INSERT INTO providers(id,name,base_url,secret) VALUES(?,?,?,X'')",
-   p.ID,p.Name,p.BaseURL);e!=nil{return Provider{},e}
+  if _,e=tx.Exec("INSERT INTO providers(id,name,base_url,secret,api_type) VALUES(?,?,?,X'',?)",
+   p.ID,p.Name,p.BaseURL,p.APIType);e!=nil{return Provider{},e}
   if _,e=tx.Exec(`INSERT INTO provider_keys(id,provider_id,label,secret,fingerprint,priority,enabled,status)
    VALUES(?,?,?,?,?,0,1,'ready')`,newID(),p.ID,"Primary",cipher,secretFingerprint([]byte(p.APIKey)));e!=nil{return Provider{},e}
   if e=tx.Commit();e!=nil{return Provider{},e}
@@ -139,14 +146,14 @@ func(s *Store)SaveProvider(p Provider)(Provider,error){
   return p,nil
  }
  if p.APIKey==""{
-  result,e:=s.db.Exec("UPDATE providers SET name=?,base_url=? WHERE id=?",p.Name,p.BaseURL,p.ID)
+  result,e:=s.db.Exec("UPDATE providers SET name=?,base_url=?,api_type=? WHERE id=?",p.Name,p.BaseURL,p.APIType,p.ID)
   if e!=nil{return Provider{},e}
   n,_:=result.RowsAffected();if n==0{return Provider{},ErrNotFound}
  }else{
   cipher,e:=sealSecret([]byte(p.APIKey));if e!=nil{return Provider{},e}
   tx,e:=s.db.Begin();if e!=nil{return Provider{},e}
   defer tx.Rollback()
-  result,e:=tx.Exec("UPDATE providers SET name=?,base_url=?,secret=X'' WHERE id=?",p.Name,p.BaseURL,p.ID)
+  result,e:=tx.Exec("UPDATE providers SET name=?,base_url=?,api_type=?,secret=X'' WHERE id=?",p.Name,p.BaseURL,p.APIType,p.ID)
   if e!=nil{return Provider{},e}
   n,_:=result.RowsAffected();if n==0{return Provider{},ErrNotFound}
   var max sql.NullInt64
@@ -166,9 +173,9 @@ func(s *Store)DeleteProvider(id string)error{
  n,_:=r.RowsAffected();if n==0{return ErrNotFound};return nil
 }
 func(s *Store)Gateways()([]Gateway,error){
- rows,e:=s.db.Query("SELECT id,name,active FROM gateways ORDER BY created_at,id");if e!=nil{return nil,e};defer rows.Close()
+ rows,e:=s.db.Query("SELECT id,name,active,port,input_type FROM gateways ORDER BY created_at,id");if e!=nil{return nil,e};defer rows.Close()
  results:=[]Gateway{}
- for rows.Next(){var g Gateway;if e=rows.Scan(&g.ID,&g.Name,&g.Active);e!=nil{return nil,e};results=append(results,g)}
+ for rows.Next(){var g Gateway;if e=rows.Scan(&g.ID,&g.Name,&g.Active,&g.Port,&g.InputType);e!=nil{return nil,e};results=append(results,g)}
  return results,rows.Err()
 }
 func validateClientKey(key string)error{
@@ -180,15 +187,19 @@ func validateClientKey(key string)error{
 }
 func(s *Store)SaveGateway(g Gateway)(Gateway,error){
  g.Name=strings.TrimSpace(g.Name)
+ if g.InputType==""{g.InputType=ProtocolAnthropic}
+ if err:=validateProtocol(g.InputType);err!=nil{return Gateway{},err}
+ if g.Port==0{g.Port=18765}
+ if g.Port<1024||g.Port>65535||g.Port==8787{return Gateway{},errors.New("gateway port must be 1024–65535 and cannot be management port 8787")}
  if g.Name==""||len(g.Name)>120{return Gateway{},errors.New("gateway name must be 1–120 characters")}
  if g.ID=="" {
   if g.ClientKey==""{g.ClientKey=newClientKey()} else if e:=validateClientKey(g.ClientKey);e!=nil{return Gateway{},e}
   g.ID=newID()
-  _,e:=s.db.Exec("INSERT INTO gateways(id,name,client_hash) VALUES(?,?,?)",g.ID,g.Name,hashKey(g.ClientKey))
+  _,e:=s.db.Exec("INSERT INTO gateways(id,name,client_hash,port,input_type) VALUES(?,?,?,?,?)",g.ID,g.Name,hashKey(g.ClientKey),g.Port,g.InputType)
   return g,e
  }
  if g.ClientKey!=""{return Gateway{},errors.New("rotate client keys using the rotate action")}
- r,e:=s.db.Exec("UPDATE gateways SET name=? WHERE id=?",g.Name,g.ID)
+ r,e:=s.db.Exec("UPDATE gateways SET name=?,port=?,input_type=? WHERE id=?",g.Name,g.Port,g.InputType,g.ID)
  if e!=nil{return Gateway{},e};n,_:=r.RowsAffected();if n==0{return Gateway{},ErrNotFound}
  return g,nil
 }
@@ -242,14 +253,14 @@ func(s *Store)ActiveAuth()(string,error){
 }
 func(s *Store)RouteFor(incoming string)(Route,error){
  var out Route
- err:=s.db.QueryRow(`SELECT g.client_hash,a.target,p.base_url,p.id
+ err:=s.db.QueryRow(`SELECT g.client_hash,a.target,p.base_url,p.id,p.api_type
  FROM gateways g JOIN aliases a ON a.gateway_id=g.id
  JOIN providers p ON p.id=a.provider_id
  WHERE g.active=1 AND a.enabled=1
    AND (a.incoming=? OR a.incoming='*')
  ORDER BY CASE WHEN a.incoming=? THEN 0 ELSE 1 END
  LIMIT 1`,incoming,incoming).
- Scan(&out.ClientHash,&out.Target,&out.BaseURL,&out.ProviderID)
+ Scan(&out.ClientHash,&out.Target,&out.BaseURL,&out.ProviderID,&out.ProviderType)
  if errors.Is(err,sql.ErrNoRows){return Route{},ErrNotFound}
  if err!=nil{return Route{},err}
  return out,nil
