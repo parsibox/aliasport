@@ -22,6 +22,8 @@ type Provider struct {
  Name string `json:"name"`
  BaseURL string `json:"base_url"`
  APIType string `json:"api_type"`
+ Priority int `json:"priority"`
+ Enabled *bool `json:"enabled,omitempty"`
  HasKey bool `json:"has_key"`
  APIKey string `json:"api_key,omitempty"` // accepted on write, never returned
 }
@@ -122,9 +124,9 @@ func validateProvider(p Provider)error{
  return nil
 }
 func(s *Store)Providers()([]Provider,error){
- rows,e:=s.db.Query("SELECT p.id,p.name,p.base_url,p.api_type,EXISTS(SELECT 1 FROM provider_keys k WHERE k.provider_id=p.id) FROM providers p ORDER BY p.name");if e!=nil{return nil,e};defer rows.Close()
+ rows,e:=s.db.Query("SELECT p.id,p.name,p.base_url,p.api_type,p.priority,p.enabled,EXISTS(SELECT 1 FROM provider_keys k WHERE k.provider_id=p.id) FROM providers p ORDER BY p.priority,p.created_at,p.id");if e!=nil{return nil,e};defer rows.Close()
  result:=[]Provider{}
- for rows.Next(){var p Provider;if e=rows.Scan(&p.ID,&p.Name,&p.BaseURL,&p.APIType,&p.HasKey);e!=nil{return nil,e};result=append(result,p)}
+ for rows.Next(){var p Provider;if e=rows.Scan(&p.ID,&p.Name,&p.BaseURL,&p.APIType,&p.Priority,&p.Enabled,&p.HasKey);e!=nil{return nil,e};result=append(result,p)}
  return result,rows.Err()
 }
 func(s *Store)SaveProvider(p Provider)(Provider,error){
@@ -133,14 +135,16 @@ func(s *Store)SaveProvider(p Provider)(Provider,error){
  if p.APIType==""{p.APIType=ProtocolAnthropic}
  if e:=validateProtocol(p.APIType);e!=nil{return Provider{},e}
  if e:=validateProvider(p);e!=nil{return Provider{},e}
+ if p.Priority<0||p.Priority>1000000{return Provider{},errors.New("provider priority must be 0–1000000")}
+ if p.Enabled==nil{t:=true;p.Enabled=&t}
  if p.ID==""{
   if p.APIKey==""{return Provider{},errors.New("provider API key is required")}
   cipher,e:=sealSecret([]byte(p.APIKey));if e!=nil{return Provider{},e}
   p.ID=newID()
   tx,e:=s.db.Begin();if e!=nil{return Provider{},e}
   defer tx.Rollback()
-  if _,e=tx.Exec("INSERT INTO providers(id,name,base_url,secret,api_type) VALUES(?,?,?,X'',?)",
-   p.ID,p.Name,p.BaseURL,p.APIType);e!=nil{return Provider{},e}
+  if _,e=tx.Exec("INSERT INTO providers(id,name,base_url,secret,api_type,priority,enabled) VALUES(?,?,?,X'',?,?,?)",
+   p.ID,p.Name,p.BaseURL,p.APIType,p.Priority,*p.Enabled);e!=nil{return Provider{},e}
   if _,e=tx.Exec(`INSERT INTO provider_keys(id,provider_id,label,secret,fingerprint,priority,enabled,status)
    VALUES(?,?,?,?,?,0,1,'ready')`,newID(),p.ID,"Primary",cipher,secretFingerprint([]byte(p.APIKey)));e!=nil{return Provider{},e}
   if e=tx.Commit();e!=nil{return Provider{},e}
@@ -148,14 +152,14 @@ func(s *Store)SaveProvider(p Provider)(Provider,error){
   return p,nil
  }
  if p.APIKey==""{
-  result,e:=s.db.Exec("UPDATE providers SET name=?,base_url=?,api_type=? WHERE id=?",p.Name,p.BaseURL,p.APIType,p.ID)
+  result,e:=s.db.Exec("UPDATE providers SET name=?,base_url=?,api_type=?,priority=?,enabled=? WHERE id=?",p.Name,p.BaseURL,p.APIType,p.Priority,*p.Enabled,p.ID)
   if e!=nil{return Provider{},e}
   n,_:=result.RowsAffected();if n==0{return Provider{},ErrNotFound}
  }else{
   cipher,e:=sealSecret([]byte(p.APIKey));if e!=nil{return Provider{},e}
   tx,e:=s.db.Begin();if e!=nil{return Provider{},e}
   defer tx.Rollback()
-  result,e:=tx.Exec("UPDATE providers SET name=?,base_url=?,api_type=?,secret=X'' WHERE id=?",p.Name,p.BaseURL,p.APIType,p.ID)
+  result,e:=tx.Exec("UPDATE providers SET name=?,base_url=?,api_type=?,priority=?,enabled=?,secret=X'' WHERE id=?",p.Name,p.BaseURL,p.APIType,p.Priority,*p.Enabled,p.ID)
   if e!=nil{return Provider{},e}
   n,_:=result.RowsAffected();if n==0{return Provider{},ErrNotFound}
   var max sql.NullInt64
@@ -307,68 +311,47 @@ func(s *Store)ActiveAuth()(string,error){
  e:=s.db.QueryRow("SELECT client_hash FROM gateways WHERE active=1").Scan(&hash)
  return hash,e
 }
-var ErrAmbiguousProvider=errors.New("multiple providers match this alias: set a default Provider on the Gateway or supply X-AliasPort-Provider")
-
-// RouteFor preserves existing callers. Requests without a provider selector
-// use the active Gateway's default Provider, when configured.
-func(s *Store)RouteFor(incoming string)(Route,error){
- return s.RouteForProvider(incoming,"")
-}
-func(s *Store)RouteForProvider(incoming,providerSelector string)(Route,error){
- var defaultID string
- err:=s.db.QueryRow("SELECT default_provider_id FROM gateways WHERE active=1 LIMIT 1").Scan(&defaultID)
- if errors.Is(err,sql.ErrNoRows){return Route{},ErrNotFound}
- if err!=nil{return Route{},err}
- chosen:=defaultID
- if providerSelector!=""{
-  // Support either the stable Provider ID or a unique display name.
-  var ids []string
-  rows,e:=s.db.Query("SELECT id FROM providers WHERE id=? OR name=? ORDER BY CASE WHEN id=? THEN 0 ELSE 1 END",providerSelector,providerSelector,providerSelector)
-  if e!=nil{return Route{},e}
-  for rows.Next(){
-   var id string
-   if e=rows.Scan(&id);e!=nil{_ = rows.Close();return Route{},e}
-   ids=append(ids,id)
-  }
-  e=rows.Err();_ = rows.Close()
-  if e!=nil{return Route{},e}
-  if len(ids)==0{return Route{},ErrNotFound}
-  if len(ids)>1{return Route{},ErrAmbiguousProvider}
-  chosen=ids[0]
- }
- rows,err:=s.db.Query(`SELECT g.client_hash,a.target,p.base_url,p.id,p.api_type,a.incoming
- FROM gateways g JOIN aliases a ON a.gateway_id=g.id
- JOIN providers p ON p.id=a.provider_id
- WHERE g.active=1 AND a.enabled=1
-   AND (a.incoming=? OR a.incoming='*')
-   AND (?='' OR a.provider_id=?)
- ORDER BY CASE WHEN a.incoming=? THEN 0 ELSE 1 END, p.name, a.id
- LIMIT 2`,incoming,chosen,chosen,incoming)
- if err!=nil{return Route{},err}
+// RoutesFor returns an ordered provider chain. Each Provider receives its own
+// exact alias first, falling back to its own '*' alias. Higher-priority
+// Providers are attempted first; ties use creation order and stable ID.
+func(s *Store)RoutesFor(incoming string)([]Route,error){
+ rows,err:=s.db.Query(`SELECT g.client_hash,a.target,p.base_url,p.id,p.api_type
+ FROM gateways g
+ JOIN providers p ON p.enabled=1
+ JOIN aliases a ON a.gateway_id=g.id AND a.provider_id=p.id AND a.enabled=1
+ WHERE g.active=1 AND (a.incoming=? OR a.incoming='*')
+ AND a.id=(
+   SELECT best.id FROM aliases best
+   WHERE best.gateway_id=g.id AND best.provider_id=p.id AND best.enabled=1
+   AND (best.incoming=? OR best.incoming='*')
+   ORDER BY CASE WHEN best.incoming=? THEN 0 ELSE 1 END
+   LIMIT 1
+ )
+ ORDER BY p.priority ASC,p.created_at ASC,p.id ASC`,incoming,incoming,incoming)
+ if err!=nil{return nil,err}
  defer rows.Close()
- var route Route
- var firstMatch string
- if !rows.Next(){
-  if err=rows.Err();err!=nil{return Route{},err}
-  return Route{},ErrNotFound
+ candidates:=[]Route{}
+ for rows.Next(){
+  var route Route
+  if err=rows.Scan(&route.ClientHash,&route.Target,&route.BaseURL,&route.ProviderID,&route.ProviderType);err!=nil{return nil,err}
+  candidates=append(candidates,route)
  }
- if err=rows.Scan(&route.ClientHash,&route.Target,&route.BaseURL,&route.ProviderID,&route.ProviderType,&firstMatch);err!=nil{return Route{},err}
- if rows.Next(){
-  var second Route
-  var secondMatch string
-  if err=rows.Scan(&second.ClientHash,&second.Target,&second.BaseURL,&second.ProviderID,&second.ProviderType,&secondMatch);err!=nil{return Route{},err}
-  if firstMatch==secondMatch{return Route{},ErrAmbiguousProvider}
- }
- if err=rows.Err();err!=nil{return Route{},err}
- return route,nil
+ if err=rows.Err();err!=nil{return nil,err}
+ if len(candidates)==0{return nil,ErrNotFound}
+ return candidates,nil
+}
+// RouteFor remains for callers that need to inspect only the first eligible
+// Provider; the runtime uses RoutesFor for transparent fallback.
+func(s *Store)RouteFor(incoming string)(Route,error){
+ all,err:=s.RoutesFor(incoming)
+ if err!=nil{return Route{},err}
+ return all[0],nil
 }
 func(s *Store)ActiveModels()([]string,error){
- rows,e:=s.db.Query(`SELECT a.incoming FROM aliases a
+ rows,e:=s.db.Query(`SELECT DISTINCT a.incoming FROM aliases a
  JOIN gateways g ON g.id=a.gateway_id
- WHERE g.active=1 AND a.enabled=1 AND a.incoming<>'*'
-   AND (g.default_provider_id='' OR a.provider_id=g.default_provider_id)
- GROUP BY a.incoming
- HAVING COUNT(*)=1
+ JOIN providers p ON p.id=a.provider_id
+ WHERE g.active=1 AND p.enabled=1 AND a.enabled=1 AND a.incoming<>'*'
  ORDER BY a.incoming`)
  if e!=nil{return nil,e}
  defer rows.Close()
