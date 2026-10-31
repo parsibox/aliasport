@@ -134,6 +134,41 @@ func(s *Store) DeleteProviderKey(providerID,id string)error{
  return nil
 }
 
+// BulkDeleteProviderKeys removes selected credentials atomically, potentially
+// across different Providers. Validation happens before the first DELETE.
+func(s *Store) BulkDeleteProviderKeys(ids []string)(int,error){
+ if len(ids)==0||len(ids)>5000{return 0,errors.New("select between 1 and 5000 API keys")}
+ seen:=make(map[string]struct{},len(ids))
+ for _,id:=range ids{
+  if len(id)!=24{return 0,errors.New("invalid API key ID")}
+  for _,c:=range id{
+   if (c<'0'||c>'9')&&(c<'a'||c>'f'){return 0,errors.New("invalid API key ID")}
+  }
+  if _,exists:=seen[id];exists{return 0,errors.New("duplicate API key ID")}
+  seen[id]=struct{}{}
+ }
+ tx,err:=s.db.Begin()
+ if err!=nil{return 0,err}
+ defer tx.Rollback()
+ check,err:=tx.Prepare("SELECT 1 FROM provider_keys WHERE id=?")
+ if err!=nil{return 0,err}
+ for _,id:=range ids{
+  var present int
+  err=check.QueryRow(id).Scan(&present)
+  if errors.Is(err,sql.ErrNoRows){_ =check.Close();return 0,ErrNotFound}
+  if err!=nil{_ =check.Close();return 0,err}
+ }
+ if err=check.Close();err!=nil{return 0,err}
+ remove,err:=tx.Prepare("DELETE FROM provider_keys WHERE id=?")
+ if err!=nil{return 0,err}
+ for _,id:=range ids{
+  if _,err=remove.Exec(id);err!=nil{_ =remove.Close();return 0,err}
+ }
+ if err=remove.Close();err!=nil{return 0,err}
+ if err=tx.Commit();err!=nil{return 0,err}
+ return len(ids),nil
+}
+
 func(s *Store) ResetProviderKey(providerID,id string)error{
  result,err:=s.db.Exec(`UPDATE provider_keys SET status='ready',last_billing_at=NULL
  WHERE id=? AND provider_id=?`,id,providerID)
