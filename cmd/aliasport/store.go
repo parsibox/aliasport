@@ -50,7 +50,7 @@ type Route struct {
  ClientHash string
  Target string
  BaseURL string
- Secret []byte
+ ProviderID string
 }
 var ErrNotFound=errors.New("not found")
 
@@ -64,6 +64,19 @@ func OpenStore(path string)(*Store,error){
   `CREATE TABLE IF NOT EXISTS providers(
     id TEXT PRIMARY KEY, name TEXT NOT NULL, base_url TEXT NOT NULL,
     secret BLOB NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS provider_keys(
+    id TEXT PRIMARY KEY,
+    provider_id TEXT NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
+    label TEXT NOT NULL,
+    secret BLOB NOT NULL,
+    fingerprint TEXT NOT NULL,
+    priority INTEGER NOT NULL DEFAULT 0,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    status TEXT NOT NULL DEFAULT 'ready' CHECK(status IN ('ready','billing_blocked')),
+    last_billing_at TEXT,
+    last_used_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE INDEX IF NOT EXISTS idx_provider_keys_selection ON provider_keys(provider_id,enabled,status,priority)`,
   `CREATE TABLE IF NOT EXISTS gateways(
     id TEXT PRIMARY KEY, name TEXT NOT NULL, client_hash TEXT NOT NULL,
     active INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
@@ -80,7 +93,9 @@ func OpenStore(path string)(*Store,error){
  }{
   if _,err=db.Exec(statement);err!=nil {db.Close();return nil,fmt.Errorf("sqlite init: %w",err)}
  }
- return &Store{db},nil
+ store:=&Store{db}
+ if err=store.migrateProviderKeys();err!=nil{db.Close();return nil,fmt.Errorf("provider key migration: %w",err)}
+ return store,nil
 }
 func(s *Store)Close()error{return s.db.Close()}
 
@@ -100,7 +115,7 @@ func validateProvider(p Provider)error{
  return nil
 }
 func(s *Store)Providers()([]Provider,error){
- rows,e:=s.db.Query("SELECT id,name,base_url,length(secret)>0 FROM providers ORDER BY name");if e!=nil{return nil,e};defer rows.Close()
+ rows,e:=s.db.Query("SELECT p.id,p.name,p.base_url,EXISTS(SELECT 1 FROM provider_keys k WHERE k.provider_id=p.id) FROM providers p ORDER BY p.name");if e!=nil{return nil,e};defer rows.Close()
  result:=[]Provider{}
  for rows.Next(){var p Provider;if e=rows.Scan(&p.ID,&p.Name,&p.BaseURL,&p.HasKey);e!=nil{return nil,e};result=append(result,p)}
  return result,rows.Err()
@@ -113,13 +128,16 @@ func(s *Store)SaveProvider(p Provider)(Provider,error){
   cipher,e:=sealSecret([]byte(p.APIKey));if e!=nil{return Provider{},e}
   p.ID=newID()
   _,e=s.db.Exec("INSERT INTO providers(id,name,base_url,secret) VALUES(?,?,?,?)",p.ID,p.Name,p.BaseURL,cipher)
+  if e!=nil{return Provider{},e}
+  if e=s.AddLegacyProviderKey(p.ID,p.APIKey,"Primary");e!=nil{return Provider{},e}
   p.APIKey="";p.HasKey=true
-  return p,e
+  return p,nil
  }
  if p.APIKey!="" {
   cipher,e:=sealSecret([]byte(p.APIKey));if e!=nil{return Provider{},e}
   result,e:=s.db.Exec("UPDATE providers SET name=?,base_url=?,secret=? WHERE id=?",p.Name,p.BaseURL,cipher,p.ID)
   if e!=nil{return Provider{},e};n,_:=result.RowsAffected();if n==0{return Provider{},ErrNotFound}
+  if e=s.AddLegacyProviderKey(p.ID,p.APIKey,"Added via Provider editor");e!=nil{return Provider{},e}
  } else {
   result,e:=s.db.Exec("UPDATE providers SET name=?,base_url=? WHERE id=?",p.Name,p.BaseURL,p.ID)
   if e!=nil{return Provider{},e};n,_:=result.RowsAffected();if n==0{return Provider{},ErrNotFound}
@@ -197,16 +215,15 @@ func(s *Store)ActiveAuth()(string,error){
  return hash,e
 }
 func(s *Store)RouteFor(incoming string)(Route,error){
- var out Route;var sealed []byte
- err:=s.db.QueryRow(`SELECT g.client_hash,a.target,p.base_url,p.secret
+ var out Route
+ err:=s.db.QueryRow(`SELECT g.client_hash,a.target,p.base_url,p.id
  FROM gateways g JOIN aliases a ON a.gateway_id=g.id
  JOIN providers p ON p.id=a.provider_id
  WHERE g.active=1 AND a.enabled=1 AND a.incoming=?`,incoming).
- Scan(&out.ClientHash,&out.Target,&out.BaseURL,&sealed)
+ Scan(&out.ClientHash,&out.Target,&out.BaseURL,&out.ProviderID)
  if errors.Is(err,sql.ErrNoRows){return Route{},ErrNotFound}
  if err!=nil{return Route{},err}
- out.Secret,err=openSecret(sealed)
- return out,err
+ return out,nil
 }
 func(s *Store)ActiveModels()([]string,error){
  rows,e:=s.db.Query(`SELECT a.incoming FROM aliases a
