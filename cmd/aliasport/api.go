@@ -75,8 +75,15 @@ func (a *App) adminAPI(w http.ResponseWriter,r *http.Request){
    active:=""
    for _,g:=range gateways{if g.Active{active=g.Name;break}}
    gatewayURL:=""
-   for _,g:=range gateways{if g.Active{gatewayURL=fmt.Sprintf("http://127.0.0.1:%d",g.Port);break}}
-   writeJSON(w,200,map[string]any{"providers":len(providers),"gateways":len(gateways),"aliases":len(aliases),"active_gateway":active,"uptime_seconds":int(time.Since(a.started).Seconds()),"gateway_url":gatewayURL})
+   gatewayURLs:=[]string{}
+   activeNames:=[]string{}
+   for _,g:=range gateways{if g.Active{
+    url:=fmt.Sprintf("http://127.0.0.1:%d",g.Port)
+    gatewayURLs=append(gatewayURLs,url);activeNames=append(activeNames,g.Name)
+    if gatewayURL==""{gatewayURL=url}
+   }}
+   active=strings.Join(activeNames,", ")
+   writeJSON(w,200,map[string]any{"providers":len(providers),"gateways":len(gateways),"aliases":len(aliases),"active_gateway":active,"active_gateway_count":len(gatewayURLs),"uptime_seconds":int(time.Since(a.started).Seconds()),"gateway_url":gatewayURL,"gateway_urls":gatewayURLs})
    return
   case "events":
    if !method(w,r,"GET"){return}
@@ -90,6 +97,10 @@ func (a *App) adminAPI(w http.ResponseWriter,r *http.Request){
     if e:=parseJSON(w,r,&v);e!=nil{apiError(w,400,e.Error());return}
     v.ID="" // prevent overwriting another record
     saved,e:=a.store.SaveProvider(v);if e!=nil{writeFailure(w,e);return}
+    if v.GatewayIDs!=nil{
+     if e=a.store.SetProviderGateways(saved.ID,v.GatewayIDs);e!=nil{writeFailure(w,e);return}
+     saved.GatewayIDs=v.GatewayIDs
+    }
     writeJSON(w,201,saved)
    default:method(w,r,"GET","POST")
    }
@@ -191,6 +202,10 @@ func (a *App) adminAPI(w http.ResponseWriter,r *http.Request){
     if e:=parseJSON(w,r,&v);e!=nil{apiError(w,400,e.Error());return}
     v.ID=id
     saved,e:=a.store.SaveProvider(v);if e!=nil{writeFailure(w,e);return}
+    if v.GatewayIDs!=nil{
+     if e=a.store.SetProviderGateways(saved.ID,v.GatewayIDs);e!=nil{writeFailure(w,e);return}
+     saved.GatewayIDs=v.GatewayIDs
+    }
     writeJSON(w,200,saved);return
    case "DELETE":
     if len(parts)!=2{break}
