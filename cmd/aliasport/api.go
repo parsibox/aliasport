@@ -127,6 +127,9 @@ func (a *App) adminAPI(w http.ResponseWriter,r *http.Request){
   if id==""{apiError(w,400,"missing id");return}
   switch parts[0] {
   case "providers":
+   if len(parts)==3 && (parts[2]=="models" || parts[2]=="balance") {
+    a.providerDiagnostic(w,r,id,parts[2]);return
+   }
    // Provider API keys are scoped by provider ID and can be managed independently.
    if len(parts)>=3 && parts[2]=="keys" {
     if len(parts)==3 {
