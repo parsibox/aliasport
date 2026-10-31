@@ -2,7 +2,7 @@
 
 Local AI Gateway Manager for Windows, written in Go.
 
-AliasPort runs an Anthropic-compatible gateway and a Persian RTL administration UI. Define multiple providers, gateway profiles and per-profile exact model aliases, then activate one profile without changing the Claude Desktop endpoint.
+AliasPort runs a local multi-protocol AI proxy and a Persian RTL administration UI. Each Provider chooses its upstream protocol (Anthropic Messages or OpenAI Chat Completions). Each Gateway chooses its input protocol and a local listening port; AliasPort converts request bodies, responses and streams when the protocols differ. Exactly one Gateway profile is active at a time.
 
 ## Run
 
@@ -14,7 +14,7 @@ dist\AliasPort.exe
 ```
 
 Management UI: http://127.0.0.1:8787
-Active gateway: http://127.0.0.1:18765
+Gateway proxy: configurable for each Gateway profile (port 18765 on migrated profiles)
 
 The browser opens automatically. The built Windows executable uses `-H windowsgui` and opens no console window.
 
@@ -39,10 +39,25 @@ Closing the browser tab alone does **not** stop AliasPort. After an explicit shu
 
 The sidebar entry for provider credentials is called **🔑 کلیدهای API**; billing failover controls remain inside that section.
 
+## Protocols and per-profile proxy ports
+
+Configuration is divided into two independent parts:
+
+- **Provider**: name, base URL (e.g., `https://api.apinex.bond/v1`), upstream API type (`Anthropic Messages` or `OpenAI Chat Completions`), API credentials.
+- **Gateway Profile**: input API type (same two options), local port (e.g., `18765`), client key and model aliases.
+
+A gateway can accept Anthropic Messages from Claude Desktop and forward OpenAI Chat Completions to APInex, or do the reverse for an OpenAI SDK client targeting ZRO's Anthropic endpoint. Matching protocols are passed through; different protocols trigger text/function-tool/SSE conversion.
+
+Go to **Gateway Profiles** to select the proxy port. The global proxy port was removed from Settings and the `-gateway` startup flag was removed. **Only one Gateway can be active at a time**; changing the active Gateway also changes its listening port. An unavailable port is rejected without changing the currently active profile. Existing database settings migrate to Anthropic/18765 automatically.
+
+The Provider list now has **Models / Connection Test** and **Balance** actions. They query optional upstream `GET /v1/models` and `GET /v1/balance` endpoints and never send a paid model completion. Unsupported providers report an explicit error.
+
+See [Protocol conversion and limitations](docs/PROTOCOLS.md).
+
 ## Quick setup
 
 1. Create a provider named ZRO with base URL `https://zro.moonmath.ai` and the **first** ZRO API key.
-2. Under **کلیدهای API و چرخش خودکار**, add backup ZRO keys, give them labels and numeric priorities, and enable them.
+2. Under **🔑 کلیدهای API**, add backup ZRO keys, give them labels and numeric priorities, and enable them.
 3. Create a gateway profile. Use a **custom local client key** (24–256 printable ASCII characters) or leave the field blank to generate one; copy it (displayed once).
 4. Add the incoming model alias (such as `claude-sonnet-5`) mapped to a ZRO model (such as `deepseek-v4.1-flash`).
 5. Activate the gateway profile.
