@@ -69,9 +69,20 @@ func TestAliasRoutingAndProfileSwitch(t *testing.T){
  if model:=<-seen;model!="deepseek-v4.1-flash"{t.Errorf("upstream model %s",model)}
  if !strings.Contains(rec.Body.String(),"message_start"){t.Errorf("stream was not forwarded")}
  if e=s.ActivateGateway(g2.ID);e!=nil{t.Fatal(e)}
+ // Activating another Gateway no longer deactivates the first one.
+ active,e:=s.ActiveGateways()
+ if e!=nil||len(active)!=2{t.Fatalf("both Gateways should be active: %v %v",active,e)}
+ fresh:=httptest.NewRequest("POST","/v1/messages",bytes.NewReader(input))
+ fresh.Header.Set("Authorization","Bearer "+g.ClientKey)
  rec=httptest.NewRecorder()
- app.messages(rec,req.Clone(req.Context()))
- if rec.Code!=401{t.Errorf("old profile key accepted: %d",rec.Code)}
+ app.messages(rec,fresh)
+ if rec.Code!=200{t.Fatalf("first Gateway stopped after second started: %d",rec.Code)}
+ if model:=<-seen;model!="deepseek-v4.1-flash"{t.Errorf("first Gateway mapping changed: %s",model)}
+ otherRequest:=httptest.NewRequest("POST","/v1/messages",bytes.NewReader(input))
+ otherRequest.Header.Set("Authorization","Bearer "+g2.ClientKey)
+ rec=httptest.NewRecorder()
+ app.messages(rec,otherRequest)
+ if rec.Code!=400{t.Errorf("unconfigured second Gateway must not inherit first aliases: %d",rec.Code)}
 }
 func TestProviderSecretIsEncryptedAtRest(t *testing.T){
  s:=testStore(t)
