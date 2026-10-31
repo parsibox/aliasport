@@ -31,6 +31,7 @@ type Gateway struct{
  Active bool `json:"active"`
  Port int `json:"port"`
  InputType string `json:"input_type"`
+ DefaultProviderID string `json:"default_provider_id"`
  ClientKey string `json:"client_key,omitempty"` // returned ONLY on create/rotate
 }
 type Alias struct{
@@ -89,7 +90,7 @@ func OpenStore(path string)(*Store,error){
     id TEXT PRIMARY KEY, gateway_id TEXT NOT NULL REFERENCES gateways(id) ON DELETE CASCADE,
     provider_id TEXT NOT NULL REFERENCES providers(id) ON DELETE RESTRICT,
     incoming TEXT NOT NULL, target TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1,
-    UNIQUE(gateway_id,incoming))`,
+    UNIQUE(gateway_id,provider_id,incoming))`,
   `CREATE TABLE IF NOT EXISTS events(
     id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL,
     incoming TEXT NOT NULL, target TEXT NOT NULL, status INTEGER NOT NULL, duration_ms INTEGER NOT NULL)`,
@@ -99,6 +100,7 @@ func OpenStore(path string)(*Store,error){
  }
  store:=&Store{db}
  if err=store.migrateProtocols();err!=nil{db.Close();return nil,fmt.Errorf("protocol migration: %w",err)}
+ if err=store.migrateProviderScopedAliases();err!=nil{db.Close();return nil,fmt.Errorf("provider-scoped aliases migration: %w",err)}
  if err=store.migrateProviderKeys();err!=nil{db.Close();return nil,fmt.Errorf("provider key migration: %w",err)}
  return store,nil
 }
@@ -173,9 +175,9 @@ func(s *Store)DeleteProvider(id string)error{
  n,_:=r.RowsAffected();if n==0{return ErrNotFound};return nil
 }
 func(s *Store)Gateways()([]Gateway,error){
- rows,e:=s.db.Query("SELECT id,name,active,port,input_type FROM gateways ORDER BY created_at,id");if e!=nil{return nil,e};defer rows.Close()
+ rows,e:=s.db.Query("SELECT id,name,active,port,input_type,default_provider_id FROM gateways ORDER BY created_at,id");if e!=nil{return nil,e};defer rows.Close()
  results:=[]Gateway{}
- for rows.Next(){var g Gateway;if e=rows.Scan(&g.ID,&g.Name,&g.Active,&g.Port,&g.InputType);e!=nil{return nil,e};results=append(results,g)}
+ for rows.Next(){var g Gateway;if e=rows.Scan(&g.ID,&g.Name,&g.Active,&g.Port,&g.InputType,&g.DefaultProviderID);e!=nil{return nil,e};results=append(results,g)}
  return results,rows.Err()
 }
 func validateClientKey(key string)error{
@@ -192,14 +194,18 @@ func(s *Store)SaveGateway(g Gateway)(Gateway,error){
  if g.Port==0{g.Port=18765}
  if g.Port<1024||g.Port>65535||g.Port==8787{return Gateway{},errors.New("gateway port must be 1024–65535 and cannot be management port 8787")}
  if g.Name==""||len(g.Name)>120{return Gateway{},errors.New("gateway name must be 1–120 characters")}
+ if g.DefaultProviderID!=""{
+  var exists int
+  if e:=s.db.QueryRow("SELECT 1 FROM providers WHERE id=?",g.DefaultProviderID).Scan(&exists);errors.Is(e,sql.ErrNoRows){return Gateway{},errors.New("default provider does not exist") }else if e!=nil{return Gateway{},e}
+ }
  if g.ID=="" {
   if g.ClientKey==""{g.ClientKey=newClientKey()} else if e:=validateClientKey(g.ClientKey);e!=nil{return Gateway{},e}
   g.ID=newID()
-  _,e:=s.db.Exec("INSERT INTO gateways(id,name,client_hash,port,input_type) VALUES(?,?,?,?,?)",g.ID,g.Name,hashKey(g.ClientKey),g.Port,g.InputType)
+  _,e:=s.db.Exec("INSERT INTO gateways(id,name,client_hash,port,input_type,default_provider_id) VALUES(?,?,?,?,?,?)",g.ID,g.Name,hashKey(g.ClientKey),g.Port,g.InputType,g.DefaultProviderID)
   return g,e
  }
  if g.ClientKey!=""{return Gateway{},errors.New("rotate client keys using the rotate action")}
- r,e:=s.db.Exec("UPDATE gateways SET name=?,port=?,input_type=? WHERE id=?",g.Name,g.Port,g.InputType,g.ID)
+ r,e:=s.db.Exec("UPDATE gateways SET name=?,port=?,input_type=?,default_provider_id=? WHERE id=?",g.Name,g.Port,g.InputType,g.DefaultProviderID,g.ID)
  if e!=nil{return Gateway{},e};n,_:=r.RowsAffected();if n==0{return Gateway{},ErrNotFound}
  return g,nil
 }
@@ -336,15 +342,15 @@ func(s *Store)Events()([]Event,error){
 
 func(s *Store) ActiveGateway()(Gateway,error){
  var g Gateway
- err:=s.db.QueryRow("SELECT id,name,active,port,input_type FROM gateways WHERE active=1 LIMIT 1").
-  Scan(&g.ID,&g.Name,&g.Active,&g.Port,&g.InputType)
+ err:=s.db.QueryRow("SELECT id,name,active,port,input_type,default_provider_id FROM gateways WHERE active=1 LIMIT 1").
+  Scan(&g.ID,&g.Name,&g.Active,&g.Port,&g.InputType,&g.DefaultProviderID)
  if errors.Is(err,sql.ErrNoRows){return Gateway{},ErrNotFound}
  return g,err
 }
 func(s *Store) GatewayByID(id string)(Gateway,error){
  var g Gateway
- err:=s.db.QueryRow("SELECT id,name,active,port,input_type FROM gateways WHERE id=? LIMIT 1",id).
-  Scan(&g.ID,&g.Name,&g.Active,&g.Port,&g.InputType)
+ err:=s.db.QueryRow("SELECT id,name,active,port,input_type,default_provider_id FROM gateways WHERE id=? LIMIT 1",id).
+  Scan(&g.ID,&g.Name,&g.Active,&g.Port,&g.InputType,&g.DefaultProviderID)
  if errors.Is(err,sql.ErrNoRows){return Gateway{},ErrNotFound}
  return g,err
 }
