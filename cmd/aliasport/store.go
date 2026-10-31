@@ -287,3 +287,18 @@ func(s *Store)Events()([]Event,error){
  for rows.Next(){var v Event;if e=rows.Scan(&v.ID,&v.When,&v.Incoming,&v.Target,&v.Status,&v.DurationMS);e!=nil{return nil,e};result=append(result,v)}
  return result,rows.Err()
 }
+
+func(s *Store) ActiveGateway()(Gateway,error){
+ var g Gateway
+ err:=s.db.QueryRow("SELECT id,name,active,port,input_type FROM gateways WHERE active=1 LIMIT 1").
+  Scan(&g.ID,&g.Name,&g.Active,&g.Port,&g.InputType)
+ if errors.Is(err,sql.ErrNoRows){return Gateway{},ErrNotFound}
+ return g,err
+}
+func(s *Store) GatewayByID(id string)(Gateway,error){
+ var g Gateway
+ err:=s.db.QueryRow("SELECT id,name,active,port,input_type FROM gateways WHERE id=? LIMIT 1",id).
+  Scan(&g.ID,&g.Name,&g.Active,&g.Port,&g.InputType)
+ if errors.Is(err,sql.ErrNoRows){return Gateway{},ErrNotFound}
+ return g,err
+}
