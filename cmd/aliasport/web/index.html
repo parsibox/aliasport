@@ -71,7 +71,7 @@ dialog:not(.picker-dialog)>h2,#editor #modal-title{padding-left:52px}
   <div id="keys-list"></div>
  </section>
  <section id="aliases" class="page hidden">
-  <div class="sectionbar"><div><h2>نگاشت دقیق مدل‌ها</h2><p>هر نام ورودی در هر Gateway به یک مدل و یک Provider اختصاص می‌یابد.</p></div><button class="btn primary" onclick="openAlias()">+ قانون جدید</button></div><div class="list-filterbar">
+  <div class="sectionbar"><div><h2>نگاشت دقیق مدل‌ها</h2><p>هر Provider می‌تواند برای هر Gateway قانون * مستقل داشته باشد. هنگام وجود چند قانون هم‌اولویت، Provider پیش‌فرض Gateway یا هدر X-AliasPort-Provider مسیر را مشخص می‌کند.</p></div><button class="btn primary" onclick="openAlias()">+ قانون جدید</button></div><div class="list-filterbar">
    <input type="search" aria-label="جست‌وجو در Aliasها" placeholder="جست‌وجوی مدل ورودی، مقصد، Provider یا Gateway..." oninput="setListFilter('aliasesSearch',this.value)">
    <select id="aliases-filter-provider" aria-label="فیلتر Aliasها بر اساس Provider" onchange="setListFilter('aliasesProvider',this.value)"><option value="">همه Providerها</option></select>
    <select id="aliases-filter-gateway" aria-label="فیلتر Aliasها بر اساس Gateway" onchange="setListFilter('aliasesGateway',this.value)"><option value="">همه Gatewayها</option></select>
@@ -306,7 +306,7 @@ function render(){
   const st=!k.enabled?'<span class="tag">غیرفعال</span>':k.status==='billing_blocked'?'<span class="tag bad">Billing مسدود</span>':'<span class="tag good">آماده</span>';
   return [`<input type="checkbox" class="alias-select-checkbox provider-key-select" data-key-id="${k.id}" aria-label="انتخاب کلید ${esc(k.label)}" onchange="toggleProviderKeySelection('${k.id}',this.checked)" ${selectedKeyIds.has(k.id)?'checked':''}>`,label,`<b>${esc(k.label)}</b>`,`<code>${esc(k.fingerprint)}</code>`,`<span class="mono">${k.priority}</span>`,st,`<span class="mono">${k.last_used_at?esc(new Date(k.last_used_at).toLocaleString('fa-IR')):'—'}</span>`,`<div class="toolbar">${k.status==='billing_blocked'?`<button class="btn small primary" onclick="resetProviderKey('${k.provider_id}','${k.id}')">بازنشانی Billing</button>`:''}<button class="btn small" onclick="openProviderKey('${k.id}')">ویرایش</button><button class="btn small danger" onclick="deleteProviderKey('${k.provider_id}','${k.id}')">حذف</button></div>`];
  })):empty('کلیدی با این فیلتر پیدا نشد','یک کلید از حساب Provider دریافت و به برنامه اضافه کنید.');
- $('gateways-list').innerHTML=filteredGateways.length?table(['نام پروفایل','پورت پروکسی','پروتکل ورودی','وضعیت','مدل‌ها','عملیات'],filteredGateways.map(x=>[`<b>${esc(x.name)}</b>`,`<code>127.0.0.1:${Number(x.port)}</code>`,`<span class="tag">${esc(protocolLabel(x.input_type))}</span>`,x.active?'<span class="tag good">در حال اجرا</span>':'<span class="tag">متوقف</span>',`<span class="mono">${a.filter(z=>z.gateway_id===x.id).length}</span>`,`<div class="toolbar">${x.active?`<button class="btn small" onclick="deactivateGateway('${x.id}')">توقف پروکسی</button>`:`<button class="btn small primary" onclick="activateGateway('${x.id}')">اجرا</button>`}<button class="btn small" onclick="openGateway('${x.id}')">ویرایش</button><button class="btn small" onclick="rotateGateway('${x.id}')">کلید جدید</button><button class="btn small danger" onclick="removeRecord('gateways','${x.id}')">حذف</button></div>`])):empty('Gateway مطابق فیلتر پیدا نشد','یک پروفایل بسازید و برای آن پورت، نوع ورودی و کلید محلی تعیین کنید.');
+ $('gateways-list').innerHTML=filteredGateways.length?table(['نام پروفایل','پورت پروکسی','پروتکل ورودی','Provider پیش‌فرض','وضعیت','مدل‌ها','عملیات'],filteredGateways.map(x=>[`<b>${esc(x.name)}</b>`,`<code>127.0.0.1:${Number(x.port)}</code>`,`<span class="tag">${esc(protocolLabel(x.input_type))}</span>`,`<span class="tag">${esc(p.find(z=>z.id===x.default_provider_id)?.name||'تعیین نشده')}</span>`,x.active?'<span class="tag good">در حال اجرا</span>':'<span class="tag">متوقف</span>',`<span class="mono">${a.filter(z=>z.gateway_id===x.id).length}</span>`,`<div class="toolbar">${x.active?`<button class="btn small" onclick="deactivateGateway('${x.id}')">توقف پروکسی</button>`:`<button class="btn small primary" onclick="activateGateway('${x.id}')">اجرا</button>`}<button class="btn small" onclick="openGateway('${x.id}')">ویرایش</button><button class="btn small" onclick="rotateGateway('${x.id}')">کلید جدید</button><button class="btn small danger" onclick="removeRecord('gateways','${x.id}')">حذف</button></div>`])):empty('Gateway مطابق فیلتر پیدا نشد','یک پروفایل بسازید و برای آن پورت، نوع ورودی و کلید محلی تعیین کنید.');
  $('aliases-list').innerHTML=filteredAliases.length?table([
   '<label title="انتخاب همه Aliasها"><input id="alias-select-all" type="checkbox" class="alias-select-checkbox" aria-label="انتخاب همه Aliasها" onchange="toggleAllAliases(this.checked)"></label>',
   'Gateway','مدل ورودی (دقیق یا *)','Provider','مدل مقصد','وضعیت','عملیات'
@@ -506,6 +506,11 @@ function openGateway(id=''){
  while(state.gateways.some(g=>g.port===suggestedPort)){suggestedPort++}
  const fields=field('name','نام پروفایل',v?.name||'Claude Desktop','required maxlength="120"')+
  selectField('input_type','نوع API ورودی (کلاینت)',protocolOptions,v?.input_type||'anthropic_messages')+
+ selectField('default_provider_id','Provider پیش‌فرض برای قوانین * و مدل‌های تکراری',[
+  {id:'',name:'بدون پیش‌فرض (فقط وقتی مسیریابی بدون ابهام است)'},
+  ...state.providers.map(p=>({id:p.id,name:p.name+' — '+protocolLabel(p.api_type)}))
+ ],v?.default_provider_id||'')+
+ '<div class="field"><small>وقتی چند Provider قانون * دارند، درخواست معمولی به Provider پیش‌فرض می‌رود. برای انتخاب صریح می‌توان هدر X-AliasPort-Provider را با شناسه یا نام یکتای Provider فرستاد.</small></div>'+
  field('port','پورت اختصاصی این Gateway',String(v?.port||suggestedPort),'type="number" min="1024" max="65535" required dir="ltr"','پورت باید آزاد باشد و نباید با پورت مدیریت 8787 یکسان باشد.')+
  (v?'':field('client_key','کلید محلی دلخواه (اختیاری)','','type="text" autocomplete="off" minlength="24" maxlength="256" dir="ltr"','خالی باشد، یک کلید تصادفی امن ساخته می‌شود.'));
  modal(v?'ویرایش Gateway':'ساخت Gateway',fields,async values=>{
@@ -546,7 +551,7 @@ function incomingModelField(value){
  '<input id="f-incoming" name="incoming" value="'+esc(value)+'" required maxlength="200" dir="ltr" autocomplete="off" spellcheck="false" aria-describedby="model-select-help">'+
  '<button type="button" class="model-picker-trigger" onclick="openModelPicker()" title="انتخاب از فهرست مدل‌های Claude" aria-label="نمایش فهرست مدل‌های Claude" aria-haspopup="dialog">'+
  '<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>'+
- '</button></div><small id="model-select-help">نام دقیق مدل را وارد کنید؛ یا * بزنید تا تمام مدل‌های بدون قانون اختصاصی به مدل مقصد هدایت شوند. قانون دقیق همیشه مقدم است.</small></div>';
+ '</button></div><small id="model-select-help">نام مدل را وارد کنید؛ یا * بزنید تا مدل‌های بدون قانون اختصاصیِ همین Provider به مدل مقصد هدایت شوند. برای چند Provider در یک Gateway، Provider پیش‌فرض را تنظیم کنید.</small></div>';
 }
 function openModelPicker(){
  if(!$('editor').open || !$('f-incoming'))return;
