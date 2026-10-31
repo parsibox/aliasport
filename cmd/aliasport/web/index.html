@@ -16,6 +16,7 @@
 dialog:not(.picker-dialog)>h2,#editor #modal-title{padding-left:52px}
 .picker-dialog .picker-head-top{padding-left:52px}
 @media(max-width:480px){.dialog-close{top:12px;left:12px;width:34px;height:34px}}
+.provider-gateway-choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin:8px 0}.provider-gateway-option{display:flex;align-items:center;gap:9px;border:1px solid var(--stroke);border-radius:10px;padding:11px;background:var(--raised);cursor:pointer}.provider-gateway-option input{width:17px;height:17px;accent-color:var(--primary);flex:none}.provider-gateway-option small{color:var(--muted)}
 </style>
 </head>
 <body>
@@ -24,8 +25,8 @@ dialog:not(.picker-dialog)>h2,#editor #modal-title{padding-left:52px}
  <div class="brand"><div class="mark">A</div><div><b>AliasPort</b><small>LOCAL AI GATEWAY</small></div></div>
  <nav class="menu" id="menu">
   <button class="active" data-page="dashboard">◈ &nbsp; نمای کلی</button>
-  <button data-page="providers">◉ &nbsp; ارائه‌دهندگان</button>
   <button data-page="gateways">◎ &nbsp; پروفایل‌های Gateway</button>
+  <button data-page="providers">◉ &nbsp; ارائه‌دهندگان</button>
   <button data-page="keys">🔑 &nbsp; کلیدهای API</button>
   <button data-page="aliases">⇄ &nbsp; قوانین Alias</button>
   <button data-page="events">▤ &nbsp; تاریخچه درخواست‌ها</button>
@@ -48,11 +49,11 @@ dialog:not(.picker-dialog)>h2,#editor #modal-title{padding-left:52px}
   </div>
  </section>
  <section id="providers" class="page hidden">
-  <div class="sectionbar"><div><h2>ارائه‌دهندگان API</h2><p>اتصال‌ها مستقل از Gateway هستند؛ یک Provider در چند پروفایل قابل استفاده است.</p></div><button class="btn primary" onclick="openProvider()">+ افزودن Provider</button></div><div class="list-filterbar"><input type="search" aria-label="جست‌وجو در Providerها" placeholder="جست‌وجوی نام، آدرس یا پروتکل Provider..." oninput="setListFilter('providersSearch',this.value)"><small id="providers-filter-count"></small></div>
+  <div class="sectionbar"><div><h2>ارائه‌دهندگان API</h2><p>برای هر Provider، Gatewayهای مجاز را انتخاب کنید. یک Provider می‌تواند هم‌زمان در چند Gateway استفاده شود.</p></div><button class="btn primary" onclick="openProvider()">+ افزودن Provider</button></div><div class="list-filterbar"><input type="search" aria-label="جست‌وجو در Providerها" placeholder="جست‌وجوی نام، آدرس یا پروتکل Provider..." oninput="setListFilter('providersSearch',this.value)"><small id="providers-filter-count"></small></div>
   <div id="providers-list"></div>
  </section>
  <section id="gateways" class="page hidden">
-  <div class="sectionbar"><div><h2>پروفایل‌های Gateway</h2><p>تنها یک پروفایل فعال است؛ تغییر آن نیازی به تغییر آدرس در Claude ندارد.</p></div><button class="btn primary" onclick="openGateway()">+ ساخت Gateway</button></div><div class="list-filterbar"><input type="search" aria-label="جست‌وجو در Gatewayها" placeholder="جست‌وجوی نام، پورت یا پروتکل Gateway..." oninput="setListFilter('gatewaysSearch',this.value)"><small id="gateways-filter-count"></small></div>
+  <div class="sectionbar"><div><h2>پروفایل‌های Gateway</h2><p>چند Gateway می‌توانند هم‌زمان روی پورت‌های مستقل اجرا شوند؛ هرکدام پروتکل و کلید محلی خودش را دارد.</p></div><button class="btn primary" onclick="openGateway()">+ ساخت Gateway</button></div><div class="list-filterbar"><input type="search" aria-label="جست‌وجو در Gatewayها" placeholder="جست‌وجوی نام، پورت یا پروتکل Gateway..." oninput="setListFilter('gatewaysSearch',this.value)"><small id="gateways-filter-count"></small></div>
   <div id="gateways-list"></div>
  </section>
  <section id="keys" class="page hidden">
@@ -300,13 +301,15 @@ function render(){
   ['aliases-filter-count',filteredAliases.length,a.length],
   ['events-filter-count',filteredEvents.length,state.events.length]
  ]) $(id).textContent=count+' از '+total+' مورد';
- $('providers-list').innerHTML=filteredProviders.length?table(['نام Provider','اولویت','وضعیت خودکار','Base URL','نوع API مقصد','کلیدهای API','عملیات'],filteredProviders.map(x=>[`<b>${esc(x.name)}</b>`,`<code>${Number(x.priority)}</code>`,x.enabled===false?'<span class="tag bad">غیرفعال</span>':'<span class="tag good">فعال</span>',`<code>${esc(x.base_url)}</code>`,`<span class="tag">${esc(protocolLabel(x.api_type))}</span>`,`<span class="tag good">${state.keys.filter(k=>k.provider_id===x.id).length} کلید رمزگذاری‌شده</span>`,`<div class="toolbar"><button class="btn small" onclick="probeProvider('${x.id}','models')">مدل‌ها / تست اتصال</button><button class="btn small" onclick="probeProvider('${x.id}','balance')">موجودی</button><button class="btn small primary" onclick="openProviderKey('', '${x.id}')">ایجاد کلید API</button><button class="btn small" onclick="openAlias('', '${x.id}')">ایجاد قانون Alias</button><button class="btn small" onclick="showAliasesForProvider('${x.id}')">نمایش Aliasها</button><button class="btn small" onclick="openProvider('${x.id}')">ویرایش</button><button class="btn small danger" onclick="removeRecord('providers','${x.id}')">حذف</button></div>`])):empty('Provider با این جست‌وجو پیدا نشد','برای شروع یک Provider از فهرست آماده انتخاب کنید یا تنظیمات آن را دستی وارد کنید.');
+ $('providers-list').innerHTML=filteredProviders.length?table(['نام Provider','Gatewayهای مجاز','اولویت','وضعیت خودکار','Base URL','نوع API مقصد','کلیدهای API','عملیات'],filteredProviders.map(x=>[`<b>${esc(x.name)}</b>`,
+`<span class="tag">${(x.gateway_ids||[]).map(id=>g.find(v=>v.id===id)?.name).filter(Boolean).map(esc).join('، ')||'هیچ‌کدام'}</span>`,
+`<code>${Number(x.priority)}</code>`,x.enabled===false?'<span class="tag bad">غیرفعال</span>':'<span class="tag good">فعال</span>',`<code>${esc(x.base_url)}</code>`,`<span class="tag">${esc(protocolLabel(x.api_type))}</span>`,`<span class="tag good">${state.keys.filter(k=>k.provider_id===x.id).length} کلید رمزگذاری‌شده</span>`,`<div class="toolbar"><button class="btn small" onclick="probeProvider('${x.id}','models')">مدل‌ها / تست اتصال</button><button class="btn small" onclick="probeProvider('${x.id}','balance')">موجودی</button><button class="btn small primary" onclick="openProviderKey('', '${x.id}')">ایجاد کلید API</button><button class="btn small" onclick="openAlias('', '${x.id}')">ایجاد قانون Alias</button><button class="btn small" onclick="showAliasesForProvider('${x.id}')">نمایش Aliasها</button><button class="btn small" onclick="openProvider('${x.id}')">ویرایش</button><button class="btn small danger" onclick="removeRecord('providers','${x.id}')">حذف</button></div>`])):empty('Provider با این جست‌وجو پیدا نشد','برای شروع یک Provider از فهرست آماده انتخاب کنید یا تنظیمات آن را دستی وارد کنید.');
  $('keys-list').innerHTML=filteredKeys.length?table(['<label title="انتخاب همه کلیدهای قابل مشاهده"><input id="keys-select-all" type="checkbox" class="alias-select-checkbox" aria-label="انتخاب همه کلیدهای API قابل مشاهده" onchange="toggleAllProviderKeys(this.checked)"></label>','Provider','نام کلید','اثر انگشت','اولویت','وضعیت','آخرین استفاده','عملیات'],filteredKeys.map(k=>{
   const label=esc(p.find(x=>x.id===k.provider_id)?.name||'—');
   const st=!k.enabled?'<span class="tag">غیرفعال</span>':k.status==='billing_blocked'?'<span class="tag bad">Billing مسدود</span>':'<span class="tag good">آماده</span>';
   return [`<input type="checkbox" class="alias-select-checkbox provider-key-select" data-key-id="${k.id}" aria-label="انتخاب کلید ${esc(k.label)}" onchange="toggleProviderKeySelection('${k.id}',this.checked)" ${selectedKeyIds.has(k.id)?'checked':''}>`,label,`<b>${esc(k.label)}</b>`,`<code>${esc(k.fingerprint)}</code>`,`<span class="mono">${k.priority}</span>`,st,`<span class="mono">${k.last_used_at?esc(new Date(k.last_used_at).toLocaleString('fa-IR')):'—'}</span>`,`<div class="toolbar">${k.status==='billing_blocked'?`<button class="btn small primary" onclick="resetProviderKey('${k.provider_id}','${k.id}')">بازنشانی Billing</button>`:''}<button class="btn small" onclick="openProviderKey('${k.id}')">ویرایش</button><button class="btn small danger" onclick="deleteProviderKey('${k.provider_id}','${k.id}')">حذف</button></div>`];
  })):empty('کلیدی با این فیلتر پیدا نشد','یک کلید از حساب Provider دریافت و به برنامه اضافه کنید.');
- $('gateways-list').innerHTML=filteredGateways.length?table(['نام پروفایل','پورت پروکسی','پروتکل ورودی','وضعیت','مدل‌ها','عملیات'],filteredGateways.map(x=>[`<b>${esc(x.name)}</b>`,`<code>127.0.0.1:${Number(x.port)}</code>`,`<span class="tag">${esc(protocolLabel(x.input_type))}</span>`,x.active?'<span class="tag good">در حال اجرا</span>':'<span class="tag">متوقف</span>',`<span class="mono">${a.filter(z=>z.gateway_id===x.id).length}</span>`,`<div class="toolbar">${x.active?`<button class="btn small" onclick="deactivateGateway('${x.id}')">توقف پروکسی</button>`:`<button class="btn small primary" onclick="activateGateway('${x.id}')">اجرا</button>`}<button class="btn small" onclick="openGateway('${x.id}')">ویرایش</button><button class="btn small" onclick="rotateGateway('${x.id}')">کلید جدید</button><button class="btn small danger" onclick="removeRecord('gateways','${x.id}')">حذف</button></div>`])):empty('Gateway مطابق فیلتر پیدا نشد','یک پروفایل بسازید و برای آن پورت، نوع ورودی و کلید محلی تعیین کنید.');
+ $('gateways-list').innerHTML=filteredGateways.length?table(['نام پروفایل','پورت پروکسی','پروتکل ورودی','Providerهای مجاز','وضعیت','مدل‌ها','عملیات'],filteredGateways.map(x=>[`<b>${esc(x.name)}</b>`,`<code>127.0.0.1:${Number(x.port)}</code>`,`<span class="tag">${esc(protocolLabel(x.input_type))}</span>`,`<span class="tag">${p.filter(v=>(v.gateway_ids||[]).includes(x.id)).length} Provider</span>`,x.active?'<span class="tag good">در حال اجرا</span>':'<span class="tag">متوقف</span>',`<span class="mono">${a.filter(z=>z.gateway_id===x.id).length}</span>`,`<div class="toolbar">${x.active?`<button class="btn small" onclick="deactivateGateway('${x.id}')">توقف پروکسی</button>`:`<button class="btn small primary" onclick="activateGateway('${x.id}')">اجرا</button>`}<button class="btn small" onclick="openGateway('${x.id}')">ویرایش</button><button class="btn small" onclick="rotateGateway('${x.id}')">کلید جدید</button><button class="btn small danger" onclick="removeRecord('gateways','${x.id}')">حذف</button></div>`])):empty('Gateway مطابق فیلتر پیدا نشد','یک پروفایل بسازید و برای آن پورت، نوع ورودی و کلید محلی تعیین کنید.');
  $('aliases-list').innerHTML=filteredAliases.length?table([
   '<label title="انتخاب همه Aliasها"><input id="alias-select-all" type="checkbox" class="alias-select-checkbox" aria-label="انتخاب همه Aliasها" onchange="toggleAllAliases(this.checked)"></label>',
   'Gateway','مدل ورودی (دقیق یا *)','Provider','مدل مقصد','وضعیت','عملیات'
@@ -492,7 +495,15 @@ function openProvider(id=''){
  const v=state.providers.find(x=>x.id===id);
  const presetButton='<div class="preset-open-bar"><div><b>انتخاب سریع Provider</b><small>نام، Base URL و نوع API با یک انتخاب پر می‌شوند. امکان ویرایش دستی باقی می‌ماند.</small></div>'+
  '<button type="button" class="btn primary" onclick="openProviderPresetPicker()">انتخاب از فهرست Providerها</button></div>';
+ const gatewaySelector='<div class="field"><label>Gatewayهای مجاز برای استفاده از این Provider</label>'+
+ (state.gateways.length?
+  '<div class="provider-gateway-choices">'+state.gateways.map(g=>
+   '<label class="provider-gateway-option"><input type="checkbox" class="provider-gateway-check" value="'+esc(g.id)+'" '+
+   (v?.gateway_ids?.includes(g.id)?'checked':'')+'><span>'+esc(g.name)+' <small>(پورت '+Number(g.port)+')</small></span></label>').join('')+'</div>':
+  '<small>هنوز Gateway ندارید؛ پس از ساخت Gateway می‌توانید آن را اینجا فعال کنید.</small>')+
+ '<small>فقط Gatewayهای انتخاب‌شده می‌توانند از این Provider در چرخش خودکار استفاده کنند. انتخاب چند Gateway مجاز است.</small></div>';
  const fields=presetButton+
+ gatewaySelector+
  field('name','نام Provider',v?.name||'','required maxlength="120" placeholder="نام سرویس API"')+
  field('base_url','آدرس اصلی API (با /v1 یا بدون آن)',v?.base_url||'','required dir="ltr" placeholder="https://api.example.com/v1"')+
  selectField('api_type','نوع API مقصد',protocolOptions,v?.api_type||'anthropic_messages')+
@@ -500,7 +511,10 @@ function openProvider(id=''){
  `<div class="field"><label><input name="enabled" type="checkbox" style="width:auto" ${v?.enabled===false?'':'checked'}> این Provider در چرخش خودکار فعال باشد</label></div>`+
  field('api_key',v?'افزودن یک کلید جدید (اختیاری)':'اولین کلید API', '',v?'type="password" autocomplete="new-password"':'type="password" autocomplete="new-password" required',
  'کلید API را از پنل Provider دریافت کنید. انتخاب قالب، کلید را تغییر نمی‌دهد.');
- modal(v?'ویرایش Provider':'ثبت Provider جدید',fields,async values=>api('providers'+(id?'/'+id:''),id?'PUT':'POST',{...values,priority:Number(values.priority),enabled:!!values.enabled}));
+ modal(v?'ویرایش Provider':'ثبت Provider جدید',fields,async values=>api('providers'+(id?'/'+id:''),id?'PUT':'POST',{
+  ...values,priority:Number(values.priority),enabled:!!values.enabled,
+  gateway_ids:Array.from(document.querySelectorAll('#form-fields .provider-gateway-check:checked')).map(x=>x.value)
+ }));
 }
 function openGateway(id=''){
  const v=state.gateways.find(x=>x.id===id);
