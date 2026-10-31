@@ -166,6 +166,7 @@ func(a *App)handleGateway(w http.ResponseWriter,r *http.Request,inputType string
    if status==429{
     cooldown:=60*time.Second
     if sec,e:=strconv.Atoi(strings.TrimSpace(upstream.Header.Get("Retry-After")));e==nil&&sec>0{
+     if sec>300{sec=300}
      cooldown=time.Duration(sec)*time.Second
     }
     _=upstream.Body.Close()
