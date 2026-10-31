@@ -121,28 +121,44 @@ func(s *Store)Providers()([]Provider,error){
  return result,rows.Err()
 }
 func(s *Store)SaveProvider(p Provider)(Provider,error){
- p.Name=strings.TrimSpace(p.Name);p.BaseURL=strings.TrimRight(strings.TrimSpace(p.BaseURL),"/")
+ p.Name=strings.TrimSpace(p.Name)
+ p.BaseURL=strings.TrimRight(strings.TrimSpace(p.BaseURL),"/")
  if e:=validateProvider(p);e!=nil{return Provider{},e}
- if p.ID=="" {
+ if p.ID==""{
   if p.APIKey==""{return Provider{},errors.New("provider API key is required")}
   cipher,e:=sealSecret([]byte(p.APIKey));if e!=nil{return Provider{},e}
   p.ID=newID()
-  _,e=s.db.Exec("INSERT INTO providers(id,name,base_url,secret) VALUES(?,?,?,?)",p.ID,p.Name,p.BaseURL,cipher)
-  if e!=nil{return Provider{},e}
-  if e=s.AddLegacyProviderKey(p.ID,p.APIKey,"Primary");e!=nil{return Provider{},e}
+  tx,e:=s.db.Begin();if e!=nil{return Provider{},e}
+  defer tx.Rollback()
+  if _,e=tx.Exec("INSERT INTO providers(id,name,base_url,secret) VALUES(?,?,?,?)",
+   p.ID,p.Name,p.BaseURL,cipher);e!=nil{return Provider{},e}
+  if _,e=tx.Exec(`INSERT INTO provider_keys(id,provider_id,label,secret,fingerprint,priority,enabled,status)
+   VALUES(?,?,?,?,?,0,1,'ready')`,newID(),p.ID,"Primary",cipher,secretFingerprint([]byte(p.APIKey)));e!=nil{return Provider{},e}
+  if e=tx.Commit();e!=nil{return Provider{},e}
   p.APIKey="";p.HasKey=true
   return p,nil
  }
- if p.APIKey!="" {
-  cipher,e:=sealSecret([]byte(p.APIKey));if e!=nil{return Provider{},e}
-  result,e:=s.db.Exec("UPDATE providers SET name=?,base_url=?,secret=? WHERE id=?",p.Name,p.BaseURL,cipher,p.ID)
-  if e!=nil{return Provider{},e};n,_:=result.RowsAffected();if n==0{return Provider{},ErrNotFound}
-  if e=s.AddLegacyProviderKey(p.ID,p.APIKey,"Added via Provider editor");e!=nil{return Provider{},e}
- } else {
+ if p.APIKey==""{
   result,e:=s.db.Exec("UPDATE providers SET name=?,base_url=? WHERE id=?",p.Name,p.BaseURL,p.ID)
-  if e!=nil{return Provider{},e};n,_:=result.RowsAffected();if n==0{return Provider{},ErrNotFound}
+  if e!=nil{return Provider{},e}
+  n,_:=result.RowsAffected();if n==0{return Provider{},ErrNotFound}
+ }else{
+  cipher,e:=sealSecret([]byte(p.APIKey));if e!=nil{return Provider{},e}
+  tx,e:=s.db.Begin();if e!=nil{return Provider{},e}
+  defer tx.Rollback()
+  result,e:=tx.Exec("UPDATE providers SET name=?,base_url=?,secret=? WHERE id=?",p.Name,p.BaseURL,cipher,p.ID)
+  if e!=nil{return Provider{},e}
+  n,_:=result.RowsAffected();if n==0{return Provider{},ErrNotFound}
+  var max sql.NullInt64
+  if e=tx.QueryRow("SELECT MAX(priority) FROM provider_keys WHERE provider_id=?",p.ID).Scan(&max);e!=nil{return Provider{},e}
+  priority:=0
+  if max.Valid{priority=int(max.Int64)+100}
+  if _,e=tx.Exec(`INSERT INTO provider_keys(id,provider_id,label,secret,fingerprint,priority,enabled,status)
+   VALUES(?,?,?,?,?,?,1,'ready')`,newID(),p.ID,"Added via Provider editor",cipher,secretFingerprint([]byte(p.APIKey)),priority);e!=nil{return Provider{},e}
+  if e=tx.Commit();e!=nil{return Provider{},e}
  }
- p.HasKey=true;p.APIKey=""
+ p.APIKey=""
+ _=s.db.QueryRow("SELECT EXISTS(SELECT 1 FROM provider_keys WHERE provider_id=?)",p.ID).Scan(&p.HasKey)
  return p,nil
 }
 func(s *Store)DeleteProvider(id string)error{
