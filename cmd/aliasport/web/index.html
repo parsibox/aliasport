@@ -17,7 +17,7 @@
   <button class="active" data-page="dashboard">◈ &nbsp; نمای کلی</button>
   <button data-page="providers">◉ &nbsp; ارائه‌دهندگان</button>
   <button data-page="gateways">◎ &nbsp; پروفایل‌های Gateway</button>
-  <button data-page="keys">🔑 &nbsp; کلیدهای API و چرخش خودکار</button>
+  <button data-page="keys">🔑 &nbsp; کلیدهای API</button>
   <button data-page="aliases">⇄ &nbsp; قوانین Alias</button>
   <button data-page="events">▤ &nbsp; تاریخچه درخواست‌ها</button>
   <button data-page="settings">⚙ &nbsp; راه‌اندازی و تنظیمات</button>
@@ -59,7 +59,13 @@
  </section>
  <section id="settings" class="page hidden">
   <div class="sectionbar"><div><h2>تنظیمات اتصال</h2><p>در این نسخه آدرس‌ها تنها روی لوپ‌بک در دسترس‌اند.</p></div></div>
-  <div class="split"><div class="card"><h2>Management UI</h2><div class="instruction">http://127.0.0.1:8787</div><h2>Anthropic API Gateway</h2><div class="instruction">http://127.0.0.1:18765</div><p>برای تغییر پورت، AliasPort.exe را با گزینه‌های <span class="mono">-admin</span> و <span class="mono">-gateway</span> اجرا کنید.</p></div><div class="card"><h2>محل داده‌ها</h2><div class="instruction">%LOCALAPPDATA%\AliasPort\aliasport.db</div><p>کلید Provider با Windows DPAPI رمزگذاری می‌شود و کلید محلی Gateway فقط به‌شکل هش ذخیره می‌شود.</p><p>برای خروج از برنامه، پردازش AliasPort.exe را متوقف کنید. بستن تب مرورگر سرویس را قطع نمی‌کند.</p></div></div>
+  <div class="split"><div class="card"><h2>Management UI</h2><div class="instruction">http://127.0.0.1:8787</div><h2>Anthropic API Gateway</h2><div class="instruction">http://127.0.0.1:18765</div><p>برای تغییر پورت، AliasPort.exe را با گزینه‌های <span class="mono">-admin</span> و <span class="mono">-gateway</span> اجرا کنید.</p></div><div class="card"><h2>محل داده‌ها</h2><div class="instruction">%LOCALAPPDATA%\AliasPort\aliasport.db</div><p>کلید Provider با Windows DPAPI رمزگذاری می‌شود و کلید محلی Gateway فقط به‌شکل هش ذخیره می‌شود.</p><p>بستن تب مرورگر سرویس را قطع نمی‌کند؛ برای خروج کامل از دکمه زیر استفاده کنید.</p></div></div>
+  <div class="card" style="margin-top:20px;border-color:#70435b">
+   <div class="sectionbar" style="margin:0;align-items:center;flex-wrap:wrap">
+    <div><h2>بستن کامل برنامه</h2><p>با بستن برنامه، پنل مدیریت و Gateway هر دو متوقف می‌شوند و درخواست‌های در حال اجرا قطع خواهند شد. تنظیمات ذخیره‌شده باقی می‌مانند.</p></div>
+    <button type="button" class="btn danger" id="shutdown-button" onclick="stopAliasPort()">⏻ بستن برنامه</button>
+   </div>
+  </div>
  </section>
  <div class="footer">AliasPort v0.1 — Private, local-first gateway control center</div>
 </main>
@@ -96,6 +102,41 @@ async function api(path,method='GET',body){
  return out;
 }
 function notify(msg,error=false){const t=$('toast');t.textContent=msg;t.style.background=error?'#613044':'#234a4c';t.classList.remove('hidden');clearTimeout(window.toastTimer);window.toastTimer=setTimeout(()=>t.classList.add('hidden'),4500)}
+async function stopAliasPort(){
+ if(!confirm('برنامه AliasPort کاملاً بسته شود؟ پنل مدیریت، Gateway و درخواست‌های فعال متوقف می‌شوند.'))return;
+ const button=$('shutdown-button');
+ button.disabled=true;
+ button.textContent='در حال بستن...';
+ try{
+  const response=await fetch('/api/shutdown',{
+   method:'POST',
+   headers:{'Content-Type':'application/json','X-AliasPort-Action':'shutdown'},
+   body:JSON.stringify({confirm:'shutdown'}),
+   cache:'no-store'
+  });
+  if(!response.ok){
+   const result=await response.json().catch(()=>({}));
+   throw new Error(result.error||'درخواست بستن برنامه پذیرفته نشد');
+  }
+  const panel=$('settings');
+  panel.innerHTML='<div class="card" style="text-align:center;padding:55px 25px"><h1>در حال توقف AliasPort...</h1><p>اتصال به پنل مدیریت و Gateway در حال قطع‌شدن است.</p><p id="stop-verification">در حال بررسی وضعیت سرویس...</p></div>';
+  for(let attempt=0;attempt<20;attempt++){
+   await new Promise(resolve=>setTimeout(resolve,250));
+   try{
+    const health=await fetch('/health?check='+attempt,{cache:'no-store',signal:AbortSignal.timeout(700)});
+    if(!health.ok)break;
+   }catch{
+    $('stop-verification').textContent='برنامه متوقف شد. برای راه‌اندازی دوباره AliasPort.exe را اجرا کنید. با تازه‌سازی صفحه، دیگر وب‌سروری پاسخ نخواهد داد.';
+    return;
+   }
+  }
+  $('stop-verification').textContent='پاسخ توقف دریافت شد، ولی قطع‌شدن سرویس تأیید نشد؛ وضعیت AliasPort.exe را بررسی کنید.';
+ }catch(error){
+  button.disabled=false;
+  button.textContent='⏻ بستن برنامه';
+  notify('خطا در بستن برنامه: '+error.message,true);
+ }
+}
 async function action(task){try{await task();await reload();notify('تغییرات ذخیره شد')}catch(e){notify(e.message,true)}}
 async function reload(){
  try{
