@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "presets": [
+    {
+      "id": "zro-anthropic",
+      "name": "ZRO (Anthropic)",
+      "base_url": "https://zro.moonmath.ai",
+      "api_type": "anthropic_messages",
+      "description": "سرویس ZRO با فرمت Anthropic Messages؛ مناسب برای Claude Desktop و Claude Code.",
+      "documentation_url": "https://zro.moonmath.ai/docs/api"
+    },
+    {
+      "id": "zro-openai",
+      "name": "ZRO (OpenAI)",
+      "base_url": "https://zro.moonmath.ai/v1",
+      "api_type": "openai_chat_completions",
+      "description": "سرویس ZRO با فرمت OpenAI Chat Completions.",
+      "documentation_url": "https://zro.moonmath.ai/docs/api"
+    },
+    {
+      "id": "apinex-anthropic",
+      "name": "APInex (Anthropic)",
+      "base_url": "https://api.apinex.bond/v1",
+      "api_type": "anthropic_messages",
+      "description": "اتصال APInex به مسیر Anthropic Messages.",
+      "documentation_url": "https://apinex.bond/developers"
+    },
+    {
+      "id": "apinex-openai",
+      "name": "APInex (OpenAI)",
+      "base_url": "https://api.apinex.bond/v1",
+      "api_type": "openai_chat_completions",
+      "description": "اتصال APInex با فرمت OpenAI Chat Completions.",
+      "documentation_url": "https://apinex.bond/developers"
+    },
+    {
+      "id": "gonkarouter-anthropic",
+      "name": "GonkaRouter (Anthropic)",
+      "base_url": "https://api.gonkarouter.io",
+      "api_type": "anthropic_messages",
+      "description": "GonkaRouter با پروتکل Anthropic Messages؛ بدون نیاز به تبدیل برای کلاینت Anthropic.",
+      "documentation_url": "https://gonkarouter.io/docs"
+    },
+    {
+      "id": "gonkarouter-openai",
+      "name": "GonkaRouter (OpenAI)",
+      "base_url": "https://api.gonkarouter.io/v1",
+      "api_type": "openai_chat_completions",
+      "description": "GonkaRouter با OpenAI Chat Completions، مناسب مدل‌هایی مانند zai-org/GLM-5.3-Flash.",
+      "documentation_url": "https://gonkarouter.io/docs"
+    }
+  ]
+}
