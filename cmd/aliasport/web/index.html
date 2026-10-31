@@ -82,6 +82,12 @@
  <div id="model-results" class="picker-content"></div>
  <div class="picker-foot">گزینه «همه مدل‌ها (*)» یک قانون داخلی AliasPort است، نه مدل Anthropic. مدل‌های قدیمی ممکن است دیگر در API قابل استفاده نباشند. <a href="https://platform.claude.com/docs/en/models/overview" target="_blank" rel="noopener noreferrer">فهرست رسمی مدل‌ها</a></div>
 </dialog>
+<dialog id="diagnostic-dialog" aria-labelledby="diagnostic-title">
+ <h2 id="diagnostic-title">بررسی Provider</h2>
+ <p id="diagnostic-description"></p>
+ <div id="diagnostic-results" style="max-height:48vh;overflow:auto"></div>
+ <div class="dialogactions"><button type="button" class="btn" onclick="document.getElementById('diagnostic-dialog').close()">بستن</button></div>
+</dialog>
 <dialog id="key-dialog"><h2>کلید دسترسی محلی Gateway</h2><p>این کلید فقط همین یک‌بار نمایش داده می‌شود. آن را در تنظیمات Claude Desktop وارد کنید.</p><div id="key-value" class="token"></div><div class="dialogactions"><button class="btn primary" onclick="copyToken()">کپی کلید</button><button class="btn" onclick="document.getElementById('key-dialog').close()">بستن</button></div></dialog>
 <div class="toast hidden" id="toast"></div>
 <script>
@@ -154,7 +160,7 @@ function render(){
  $('stat-active').textContent=state.overview.active_gateway||'تنظیم نشده';
  $('dashboard-proxy-url').textContent=state.overview.gateway_url||'هنوز Gateway فعالی انتخاب نشده';
  const p=state.providers,g=state.gateways,a=state.aliases;
- $('providers-list').innerHTML=p.length?table(['نام Provider','Base URL','نوع API مقصد','کلیدهای API','عملیات'],p.map(x=>[`<b>${esc(x.name)}</b>`,`<code>${esc(x.base_url)}</code>`,`<span class="tag">${esc(protocolLabel(x.api_type))}</span>`,`<span class="tag good">${state.keys.filter(k=>k.provider_id===x.id).length} کلید رمزگذاری‌شده</span>`,`<div class="toolbar"><button class="btn small" onclick="showPage('keys');openProviderKey('', '${x.id}')">+ کلید API</button><button class="btn small" onclick="openProvider('${x.id}')">ویرایش</button><button class="btn small danger" onclick="removeRecord('providers','${x.id}')">حذف</button></div>`])):empty('هیچ Provider ثبت نشده','ابتدا سرویس ZRO یا ارائه‌دهنده دیگری را اضافه کنید.');
+ $('providers-list').innerHTML=p.length?table(['نام Provider','Base URL','نوع API مقصد','کلیدهای API','عملیات'],p.map(x=>[`<b>${esc(x.name)}</b>`,`<code>${esc(x.base_url)}</code>`,`<span class="tag">${esc(protocolLabel(x.api_type))}</span>`,`<span class="tag good">${state.keys.filter(k=>k.provider_id===x.id).length} کلید رمزگذاری‌شده</span>`,`<div class="toolbar"><button class="btn small" onclick="probeProvider('${x.id}','models')">مدل‌ها / تست اتصال</button><button class="btn small" onclick="probeProvider('${x.id}','balance')">موجودی</button><button class="btn small" onclick="showPage('keys');openProviderKey('', '${x.id}')">+ کلید API</button><button class="btn small" onclick="openProvider('${x.id}')">ویرایش</button><button class="btn small danger" onclick="removeRecord('providers','${x.id}')">حذف</button></div>`])):empty('هیچ Provider ثبت نشده','ابتدا سرویس ZRO یا ارائه‌دهنده دیگری را اضافه کنید.');
  $('keys-list').innerHTML=state.keys.length?table(['Provider','نام کلید','اثر انگشت','اولویت','وضعیت','آخرین استفاده','عملیات'],state.keys.map(k=>{
   const label=esc(p.find(x=>x.id===k.provider_id)?.name||'—');
   const st=!k.enabled?'<span class="tag">غیرفعال</span>':k.status==='billing_blocked'?'<span class="tag bad">Billing مسدود</span>':'<span class="tag good">آماده</span>';
@@ -175,6 +181,37 @@ const protocolOptions=[
  {id:'openai_chat_completions',name:'OpenAI Chat Completions (/v1/chat/completions)'}
 ];
 function protocolLabel(value){return protocolOptions.find(p=>p.id===value)?.name||value||'Anthropic Messages'}
+async function probeProvider(id,kind){
+ const provider=state.providers.find(x=>x.id===id);
+ $('diagnostic-title').textContent=(kind==='models'?'مدل‌های Provider: ':'موجودی Provider: ')+(provider?.name||'');
+ $('diagnostic-description').textContent=kind==='models'?'درخواست GET /v1/models بدون مصرف اعتبار تولید متن':'دریافت موجودی از GET /v1/balance در صورت پشتیبانی Provider';
+ $('diagnostic-results').textContent='در حال دریافت اطلاعات...';
+ $('diagnostic-dialog').showModal();
+ try{
+  const result=await api('providers/'+id+'/'+kind);
+  const region=$('diagnostic-results');
+  region.replaceChildren();
+  if(kind==='models'){
+   const count=document.createElement('p');
+   count.textContent='مدل‌های دریافت‌شده: '+result.count+' — روی شناسه هر مدل برای کپی کلیک کنید.';
+   region.append(count);
+   for(const model of result.models){
+    const b=document.createElement('button');
+    b.type='button';b.className='btn small';
+    b.style.margin='4px';
+    b.textContent=model.id;
+    b.title=model.name;
+    b.onclick=async()=>{try{await navigator.clipboard.writeText(model.id);notify('شناسه مدل کپی شد')}catch{notify('کپی خودکار ممکن نیست',true)}};
+    region.append(b);
+   }
+  }else{
+   const pre=document.createElement('pre');
+   pre.style.cssText='direction:ltr;text-align:left;white-space:pre-wrap;overflow:auto;background:#0f1a2c;padding:12px;border-radius:10px';
+   pre.textContent=JSON.stringify(result.balance,null,2);
+   region.append(pre);
+  }
+ }catch(err){$('diagnostic-results').textContent=err.message}
+}
 function openProvider(id=''){
  const v=state.providers.find(x=>x.id===id);
  const fields=field('name','نام Provider',v?.name||'ZRO','required maxlength="120"')+
