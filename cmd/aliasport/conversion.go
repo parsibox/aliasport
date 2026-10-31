@@ -71,6 +71,8 @@ func anthropicContent(content any)(any,[]any,error) {
    textParts=append(textParts,map[string]any{"type":"image_url","image_url":map[string]any{"url":u}})
   case "tool_use":
    tools=append(tools,map[string]any{"id":str(b["id"]),"type":"function","function":map[string]any{"name":str(b["name"]),"arguments":marsh(b["input"])}})
+  case "tool_result":
+   // Extracted separately as OpenAI tool-role messages by the user turn handler.
   default:return nil,nil,fmt.Errorf("%w: Anthropic content block %s",ErrUnsupportedFeature,str(b["type"]))
   }
  }
