@@ -2,7 +2,7 @@
 
 Local AI Gateway Manager for Windows, written in Go.
 
-AliasPort runs a local multi-protocol AI proxy and a Persian RTL administration UI. Each Provider chooses its upstream protocol (Anthropic Messages or OpenAI Chat Completions). Each Gateway chooses its input protocol and a local listening port; AliasPort converts request bodies, responses and streams when the protocols differ. Exactly one Gateway profile is active at a time.
+AliasPort runs a local multi-protocol AI proxy and a Persian RTL administration UI. Each Provider chooses its upstream protocol (Anthropic Messages or OpenAI Chat Completions). Each Gateway chooses its input protocol and a local listening port; AliasPort converts request bodies, responses and streams when the protocols differ. Multiple Gateway profiles can run concurrently, each on its own local port and with its own client key.
 
 ## Run
 
@@ -23,7 +23,7 @@ The browser opens automatically. The built Windows executable uses `-H windowsgu
 Run `build.bat` from CMD or `.\build.bat` in PowerShell. The build now performs the full safe cycle:
 
 1. Check `http://127.0.0.1:8787/health` to determine whether AliasPort is running. A non-AliasPort service on that port causes the build to **stop safely**, not kill the process.
-2. If AliasPort is running, submit a confirmed same-origin `POST /api/shutdown` with `{"confirm":"shutdown"}` and `X-AliasPort-Action: shutdown`. Wait for both the management and active Gateway proxy ports to close.
+2. If AliasPort is running, submit a confirmed same-origin `POST /api/shutdown` with `{"confirm":"shutdown"}` and `X-AliasPort-Action: shutdown`. Wait for the management listener and every active Gateway proxy port to close.
 3. Resolve dependencies, regenerate the icon, run all Go tests and build `dist\AliasPort.exe`.
 4. **Only after a successful build**, launch the new EXE and verify that the management health endpoint responds.
 
@@ -54,7 +54,7 @@ If Windows Explorer caches the old icon after you replace an existing EXE, renam
 
 ### Exit the program completely
 
-In the management UI, open **تنظیمات** and choose **⏻ بستن برنامه**, then confirm. AliasPort closes both the management listener (port 8787 by default) and the active Gateway listener (the port chosen for its profile), terminates active HTTP/SSE connections and exits the Go process. Saved SQLite configuration is preserved.
+In the management UI, open **تنظیمات** and choose **⏻ بستن برنامه**, then confirm. AliasPort closes the management listener (port 8787 by default) and all active Gateway listeners, terminates active HTTP/SSE connections and exits the Go process. Saved SQLite configuration is preserved.
 
 Closing the browser tab alone does **not** stop AliasPort. After an explicit shutdown, refreshing the management URL fails until `AliasPort.exe` is launched again. The shutdown endpoint requires a same-origin POST, a special request header and an explicit confirmation payload.
 
@@ -69,7 +69,7 @@ Configuration is divided into two independent parts:
 
 A gateway can accept Anthropic Messages from Claude Desktop and forward OpenAI Chat Completions to a compatible Provider, or convert in the opposite direction for an OpenAI SDK client. Matching protocols are passed through; different protocols trigger text/function-tool/SSE conversion.
 
-Go to **Gateway Profiles** to select the proxy port. The global proxy port was removed from Settings and the `-gateway` startup flag was removed. **Only one Gateway can be active at a time**; changing the active Gateway also changes its listening port. An unavailable port is rejected without changing the currently active profile. Existing database settings migrate to Anthropic/18765 automatically.
+Go to **Gateway Profiles** to select the proxy port. The global proxy port was removed from Settings and the `-gateway` startup flag was removed. **Several Gateways can run simultaneously** on distinct ports. Starting one does not stop another. An unavailable port is rejected without changing the currently active profile. Existing database settings migrate to Anthropic/18765 automatically.
 
 The Provider list now has **Models / Connection Test** and **Balance** actions. They query optional upstream `GET /v1/models` and `GET /v1/balance` endpoints and never send a paid model completion. Unsupported providers report an explicit error.
 
@@ -77,11 +77,11 @@ See [Protocol conversion and limitations](docs/PROTOCOLS.md).
 
 ## Quick setup
 
-1. Open **Providers → Add Provider** and choose **انتخاب از فهرست Providerها** to select a ready-to-use template, or enter the name, base URL, and API protocol manually.
-2. Enter the API key issued by **that Provider**. Additional or backup keys can be registered under **🔑 کلیدهای API** with ordering and billing-only rotation.
+1. Create Gateway profiles first, then open **Providers → Add Provider** and choose **انتخاب از فهرست Providerها** to select a ready-to-use template, or enter the name, base URL, and API protocol manually.
+2. Tick one or more **allowed Gateway profiles** for that Provider, then enter the API key issued by **that Provider**. Additional or backup keys can be registered under **🔑 کلیدهای API** with ordering and billing-only rotation.
 3. Create a Gateway profile; choose its **input protocol** and **local port**. Generate a secure local client key or supply one yourself.
 4. Add an incoming model alias (such as `claude-sonnet-5` or `*`) and a real model ID supported by the selected Provider.
-5. Activate the Gateway profile.
+5. Activate any desired Gateway profiles. They may stay active simultaneously when their ports are distinct.
 6. Configure the client to connect to `http://127.0.0.1:<gateway-port>` using the **local Gateway client key**, not the Provider key.
 
 ### Provider templates catalog
