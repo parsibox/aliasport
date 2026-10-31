@@ -246,6 +246,52 @@ func(s *Store)DeleteAlias(id string)error{
  r,e:=s.db.Exec("DELETE FROM aliases WHERE id=?",id);if e!=nil{return e}
  n,_:=r.RowsAffected();if n==0{return ErrNotFound};return nil
 }
+// BulkAliases applies a single operation to an explicit list of saved aliases.
+// Validation and mutations run in the same SQLite transaction: a missing ID or
+// invalid request rolls back the entire selection.
+func(s *Store)BulkAliases(action string,ids []string)(int,error){
+ if action!="enable"&&action!="disable"&&action!="delete"{
+  return 0,errors.New("bulk alias action must be enable, disable or delete")
+ }
+ if len(ids)==0||len(ids)>5000{
+  return 0,errors.New("select between 1 and 5000 aliases")
+ }
+ unique:=make(map[string]struct{},len(ids))
+ for _,id:=range ids{
+  if len(id)!=24{return 0,errors.New("invalid alias ID")}
+  for _,c:=range id{
+   if (c<'0'||c>'9')&&(c<'a'||c>'f'){return 0,errors.New("invalid alias ID")}
+  }
+  if _,exists:=unique[id];exists{return 0,errors.New("duplicate alias ID")}
+  unique[id]=struct{}{}
+ }
+ tx,err:=s.db.Begin()
+ if err!=nil{return 0,err}
+ defer tx.Rollback()
+ exists,err:=tx.Prepare("SELECT 1 FROM aliases WHERE id=?")
+ if err!=nil{return 0,err}
+ for _,id:=range ids{
+  var found int
+  err=exists.QueryRow(id).Scan(&found)
+  if errors.Is(err,sql.ErrNoRows){_ = exists.Close();return 0,ErrNotFound}
+  if err!=nil{_ = exists.Close();return 0,err}
+ }
+ if err=exists.Close();err!=nil{return 0,err}
+ var statement string
+ switch action{
+ case "enable":statement="UPDATE aliases SET enabled=1 WHERE id=?"
+ case "disable":statement="UPDATE aliases SET enabled=0 WHERE id=?"
+ case "delete":statement="DELETE FROM aliases WHERE id=?"
+ }
+ update,err:=tx.Prepare(statement)
+ if err!=nil{return 0,err}
+ for _,id:=range ids{
+  if _,err=update.Exec(id);err!=nil{_ = update.Close();return 0,err}
+ }
+ if err=update.Close();err!=nil{return 0,err}
+ if err=tx.Commit();err!=nil{return 0,err}
+ return len(ids),nil
+}
 func(s *Store)ActiveAuth()(string,error){
  var hash string
  e:=s.db.QueryRow("SELECT client_hash FROM gateways WHERE active=1").Scan(&hash)
