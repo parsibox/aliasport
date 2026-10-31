@@ -245,7 +245,10 @@ func(s *Store)RouteFor(incoming string)(Route,error){
  err:=s.db.QueryRow(`SELECT g.client_hash,a.target,p.base_url,p.id
  FROM gateways g JOIN aliases a ON a.gateway_id=g.id
  JOIN providers p ON p.id=a.provider_id
- WHERE g.active=1 AND a.enabled=1 AND a.incoming=?`,incoming).
+ WHERE g.active=1 AND a.enabled=1
+   AND (a.incoming=? OR a.incoming='*')
+ ORDER BY CASE WHEN a.incoming=? THEN 0 ELSE 1 END
+ LIMIT 1`,incoming,incoming).
  Scan(&out.ClientHash,&out.Target,&out.BaseURL,&out.ProviderID)
  if errors.Is(err,sql.ErrNoRows){return Route{},ErrNotFound}
  if err!=nil{return Route{},err}
@@ -254,7 +257,8 @@ func(s *Store)RouteFor(incoming string)(Route,error){
 func(s *Store)ActiveModels()([]string,error){
  rows,e:=s.db.Query(`SELECT a.incoming FROM aliases a
  JOIN gateways g ON g.id=a.gateway_id
- WHERE g.active=1 AND a.enabled=1 ORDER BY a.incoming`)
+ WHERE g.active=1 AND a.enabled=1 AND a.incoming<>'*'
+ ORDER BY a.incoming`)
  if e!=nil{return nil,e};defer rows.Close()
  result:=[]string{}
  for rows.Next(){var name string;if e=rows.Scan(&name);e!=nil{return nil,e};result=append(result,name)}
