@@ -33,7 +33,7 @@ If Windows Explorer caches the old icon after you replace an existing EXE, renam
 
 ### Exit the program completely
 
-In the management UI, open **تنظیمات** and choose **⏻ بستن برنامه**, then confirm. AliasPort closes both the management listener (port 8787) and the API gateway listener (port 18765), terminates active HTTP/SSE connections and exits the Go process. Saved SQLite configuration is preserved.
+In the management UI, open **تنظیمات** and choose **⏻ بستن برنامه**, then confirm. AliasPort closes both the management listener (port 8787 by default) and the active Gateway listener (the port chosen for its profile), terminates active HTTP/SSE connections and exits the Go process. Saved SQLite configuration is preserved.
 
 Closing the browser tab alone does **not** stop AliasPort. After an explicit shutdown, refreshing the management URL fails until `AliasPort.exe` is launched again. The shutdown endpoint requires a same-origin POST, a special request header and an explicit confirmation payload.
 
@@ -46,7 +46,7 @@ Configuration is divided into two independent parts:
 - **Provider**: name, base URL (e.g., `https://api.apinex.bond/v1`), upstream API type (`Anthropic Messages` or `OpenAI Chat Completions`), API credentials.
 - **Gateway Profile**: input API type (same two options), local port (e.g., `18765`), client key and model aliases.
 
-A gateway can accept Anthropic Messages from Claude Desktop and forward OpenAI Chat Completions to APInex, or do the reverse for an OpenAI SDK client targeting ZRO's Anthropic endpoint. Matching protocols are passed through; different protocols trigger text/function-tool/SSE conversion.
+A gateway can accept Anthropic Messages from Claude Desktop and forward OpenAI Chat Completions to a compatible Provider, or convert in the opposite direction for an OpenAI SDK client. Matching protocols are passed through; different protocols trigger text/function-tool/SSE conversion.
 
 Go to **Gateway Profiles** to select the proxy port. The global proxy port was removed from Settings and the `-gateway` startup flag was removed. **Only one Gateway can be active at a time**; changing the active Gateway also changes its listening port. An unavailable port is rejected without changing the currently active profile. Existing database settings migrate to Anthropic/18765 automatically.
 
@@ -56,12 +56,18 @@ See [Protocol conversion and limitations](docs/PROTOCOLS.md).
 
 ## Quick setup
 
-1. Create a provider named ZRO with base URL `https://zro.moonmath.ai` and the **first** ZRO API key.
-2. Under **🔑 کلیدهای API**, add backup ZRO keys, give them labels and numeric priorities, and enable them.
-3. Create a gateway profile. Use a **custom local client key** (24–256 printable ASCII characters) or leave the field blank to generate one; copy it (displayed once).
-4. Add the incoming model alias (such as `claude-sonnet-5`) mapped to a ZRO model (such as `deepseek-v4.1-flash`).
-5. Activate the gateway profile.
-6. In Claude Desktop, set Gateway base URL to `http://127.0.0.1:18765`, static bearer API key to the **local** gateway client key, and manually configure the model IDs matching your aliases.
+1. Open **Providers → Add Provider** and choose **انتخاب از فهرست Providerها** to select a ready-to-use template, or enter the name, base URL, and API protocol manually.
+2. Enter the API key issued by **that Provider**. Additional or backup keys can be registered under **🔑 کلیدهای API** with ordering and billing-only rotation.
+3. Create a Gateway profile; choose its **input protocol** and **local port**. Generate a secure local client key or supply one yourself.
+4. Add an incoming model alias (such as `claude-sonnet-5` or `*`) and a real model ID supported by the selected Provider.
+5. Activate the Gateway profile.
+6. Configure the client to connect to `http://127.0.0.1:<gateway-port>` using the **local Gateway client key**, not the Provider key.
+
+### Provider templates catalog
+
+The built-in picker has searchable ready-made presets for **ZRO, APInex and GonkaRouter** in Anthropic and OpenAI Chat formats. The complete catalog is kept separately at [`cmd/aliasport/web/provider-presets.json`](cmd/aliasport/web/provider-presets.json). Add a new Provider by copying an entry, changing its unique ID, name, URL and API protocol, then rebuilding. No API keys belong in this file. Selecting a preset fills only the public connection fields, leaving API keys unchanged until entered explicitly.
+
+[How to add and update Provider presets](docs/PROVIDER_PRESETS.md).
 
 When an upstream key receives a verified billing error, it is quarantined and the request is retried with the next eligible key. Keys stay blocked until manually reset. Ordinary 429 rate limits and errors after streaming begins do **not** cause rotation. See [API key rotation and billing behavior](docs/KEY_ROTATION.md).
 
@@ -75,7 +81,7 @@ Model aliases also support an incoming ID of `*`, which acts as a **catch-all fa
 - Provider secrets use Windows DPAPI at rest. The local client key is stored as a SHA-256 hash and shown only at creation/rotation.
 - Request bodies and API keys are never logged. Event records include only model names, HTTP status and latency.
 - Browsers can access the administration API only from the local management origin. No cloud sync or telemetry.
-- For now, provider API type is **Anthropic Messages compatible**. OpenAI-to-Anthropic protocol translation is planned, not simulated.
+- Anthropic Messages and OpenAI Chat Completions are supported; cross-protocol translation has limits for advanced tools and reasoning features (see [Protocols](docs/PROTOCOLS.md)).
 - This is an early MVP: do not expose either port to a LAN or the public internet.
 
 ## Development
