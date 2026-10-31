@@ -168,3 +168,49 @@ func TestGatewayProviderMenuOrderAndSelector(t *testing.T){
   if !strings.Contains(page,token){t.Errorf("missing Provider assignment UI: %s",token)}
  }
 }
+
+func TestProviderAPISavesMultipleGatewayAssignments(t *testing.T){
+ store:=testStore(t)
+ g1,err:=store.SaveGateway(Gateway{Name:"Claude"})
+ if err!=nil{t.Fatal(err)}
+ g2,err:=store.SaveGateway(Gateway{Name:"OpenAI",Port:18766})
+ if err!=nil{t.Fatal(err)}
+ app:=&App{store:store}
+ send:=func(method,path string,v any)(int,map[string]any){
+  t.Helper()
+  payload,err:=json.Marshal(v);if err!=nil{t.Fatal(err)}
+  request:=httptest.NewRequest(method,"http://127.0.0.1:8787"+path,bytes.NewReader(payload))
+  request.Header.Set("Content-Type","application/json")
+  rec:=httptest.NewRecorder()
+  adminSecurity(http.HandlerFunc(app.adminAPI)).ServeHTTP(rec,request)
+  var reply map[string]any
+  if err:=json.Unmarshal(rec.Body.Bytes(),&reply);err!=nil{t.Fatal(err)}
+  return rec.Code,reply
+ }
+ code,created:=send("POST","/api/providers",map[string]any{
+  "name":"Shared Provider","base_url":"https://example.org","api_key":"secret",
+  "gateway_ids":[]string{g1.ID,g2.ID},
+ })
+ if code!=201{t.Fatalf("create status %d: %+v",code,created)}
+ id,ok:=created["id"].(string);if !ok||id==""{t.Fatal("missing Provider ID")}
+ providers,err:=store.Providers()
+ if err!=nil||len(providers)!=1||len(providers[0].GatewayIDs)!=2{
+  t.Fatalf("multi-Gateway assignment did not save: %+v %v",providers,err)
+ }
+ code,updated:=send("PUT","/api/providers/"+id,map[string]any{
+  "name":"Shared Provider","base_url":"https://example.org",
+  "api_type":"anthropic_messages","gateway_ids":[]string{g2.ID},
+ })
+ if code!=200{t.Fatalf("update failed: %d %+v",code,updated)}
+ ids,err:=store.ProviderGatewayIDs(id)
+ if err!=nil||len(ids)!=1||ids[0]!=g2.ID{t.Fatalf("Gateway association was not replaced: %v %v",ids,err)}
+ code,_=send("PUT","/api/providers/"+id,map[string]any{
+  "name":"Should Not Persist","base_url":"https://example.org",
+  "gateway_ids":[]string{g2.ID,"000000000000000000000000"},
+ })
+ if code!=400{t.Fatalf("invalid Gateway accepted: %d",code)}
+ providers,err=store.Providers()
+ if err!=nil||providers[0].Name!="Shared Provider"{
+  t.Fatalf("invalid association partially updated the Provider: %+v %v",providers,err)
+ }
+}
