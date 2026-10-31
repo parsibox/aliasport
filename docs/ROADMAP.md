@@ -6,7 +6,7 @@
 - Providers, profiles, exact per-profile alias rules
 - Profile switching without restarting active streaming requests
 - Anthropic Messages and OpenAI Chat Completions input/output, including text/tool-call and SSE conversion
-- Independent local proxy port per gateway profile (one profile active at a time)
+- Independent local proxy port per Gateway, with multiple Gateways active concurrently and Provider-to-Gateway assignments
 - Provider protocol selector; /v1 endpoint normalization for APInex and ZRO
 - Provider GET /v1/models discovery, optional GET /v1/balance and connection checks
 - Hashed per-profile client keys (custom or generated), Windows DPAPI encryption for multiple per-provider API keys
