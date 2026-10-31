@@ -17,6 +17,7 @@
   <button class="active" data-page="dashboard">◈ &nbsp; نمای کلی</button>
   <button data-page="providers">◉ &nbsp; ارائه‌دهندگان</button>
   <button data-page="gateways">◎ &nbsp; پروفایل‌های Gateway</button>
+  <button data-page="keys">🔑 &nbsp; کلیدهای API و چرخش خودکار</button>
   <button data-page="aliases">⇄ &nbsp; قوانین Alias</button>
   <button data-page="events">▤ &nbsp; تاریخچه درخواست‌ها</button>
   <button data-page="settings">⚙ &nbsp; راه‌اندازی و تنظیمات</button>
@@ -43,6 +44,13 @@
  <section id="gateways" class="page hidden">
   <div class="sectionbar"><div><h2>پروفایل‌های Gateway</h2><p>تنها یک پروفایل فعال است؛ تغییر آن نیازی به تغییر آدرس در Claude ندارد.</p></div><button class="btn primary" onclick="openGateway()">+ ساخت Gateway</button></div><div id="gateways-list"></div>
  </section>
+ <section id="keys" class="page hidden">
+  <div class="sectionbar"><div><h2>کلیدهای API برای Providerها</h2>
+   <p>چند کلید مستقل برای هر Provider ثبت کنید. اولویت کمتر، زودتر انتخاب می‌شود؛ کلید دارای خطای Billing خودکار کنار گذاشته می‌شود.</p></div>
+   <button class="btn primary" onclick="openProviderKey()">+ افزودن API Key</button></div>
+  <div class="notice" style="margin-bottom:16px">کلیدهای واقعی باید در پنل همان Provider ایجاد شوند. AliasPort آن‌ها را به‌صورت رمزگذاری‌شده ذخیره می‌کند. خطای Billing تأییدشده باعث جابه‌جایی روی کلید بعدی می‌شود. کلید مسدودشده تا بازنشانی دستی دوباره استفاده نمی‌شود.</div>
+  <div id="keys-list"></div>
+ </section>
  <section id="aliases" class="page hidden">
   <div class="sectionbar"><div><h2>نگاشت دقیق مدل‌ها</h2><p>هر نام ورودی در هر Gateway به یک مدل و یک Provider اختصاص می‌یابد.</p></div><button class="btn primary" onclick="openAlias()">+ قانون جدید</button></div><div id="aliases-list"></div>
  </section>
@@ -60,10 +68,10 @@
 <dialog id="key-dialog"><h2>کلید دسترسی محلی Gateway</h2><p>این کلید فقط همین یک‌بار نمایش داده می‌شود. آن را در تنظیمات Claude Desktop وارد کنید.</p><div id="key-value" class="token"></div><div class="dialogactions"><button class="btn primary" onclick="copyToken()">کپی کلید</button><button class="btn" onclick="document.getElementById('key-dialog').close()">بستن</button></div></dialog>
 <div class="toast hidden" id="toast"></div>
 <script>
-const state={page:'dashboard',providers:[],gateways:[],aliases:[],events:[],overview:{}};
+const state={page:'dashboard',providers:[],gateways:[],aliases:[],keys:[],events:[],overview:{}};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
-const labels={dashboard:['داشبورد مدیریت','مدیریت متمرکز Providerها، مدل‌ها و Gatewayهای محلی'],providers:['مدیریت Providerها','اتصال به سرویس‌های سازگار با Anthropic Messages API'],gateways:['مدیریت Gateway','ساخت و فعال‌کردن پروفایل‌های مستقل'],aliases:['Model Aliases','تعیین نام مدل ورودی و مقصد برای هر Gateway'],events:['گزارش درخواست‌ها','پایش وضعیت و عملکرد بدون ذخیره متن گفتگو'],settings:['تنظیمات برنامه','آدرس‌ها، داده‌های محلی و امنیت']};
+const labels={dashboard:['داشبورد مدیریت','مدیریت متمرکز Providerها، مدل‌ها و Gatewayهای محلی'],providers:['مدیریت Providerها','اتصال به سرویس‌های سازگار با Anthropic Messages API'],keys:['کلیدهای API و چرخش خودکار','مدیریت چند کلید برای هر Provider، ترتیب و وضعیت Billing'],gateways:['مدیریت Gateway','ساخت و فعال‌کردن پروفایل‌های مستقل'],aliases:['Model Aliases','تعیین نام مدل ورودی و مقصد برای هر Gateway'],events:['گزارش درخواست‌ها','پایش وضعیت و عملکرد بدون ذخیره متن گفتگو'],settings:['تنظیمات برنامه','آدرس‌ها، داده‌های محلی و امنیت']};
 document.querySelectorAll('[data-page]').forEach(b=>b.addEventListener('click',()=>showPage(b.dataset.page)));
 function showPage(page){
  state.page=page;
@@ -82,7 +90,8 @@ async function action(task){try{await task();await reload();notify('تغییرا
 async function reload(){
  try{
   const [p,g,a,ev,o]=await Promise.all([api('providers'),api('gateways'),api('aliases'),api('events'),api('overview')]);
-  Object.assign(state,{providers:p,gateways:g,aliases:a,events:ev,overview:o});
+  const keyLists=await Promise.all(p.map(x=>api('providers/'+x.id+'/keys')));
+  Object.assign(state,{providers:p,gateways:g,aliases:a,keys:keyLists.flat(),events:ev,overview:o});
   render();
  }catch(e){notify('عدم ارتباط با API: '+e.message,true)}
 }
@@ -92,7 +101,12 @@ function render(){
  $('stat-aliases').textContent=state.overview.aliases;
  $('stat-active').textContent=state.overview.active_gateway||'تنظیم نشده';
  const p=state.providers,g=state.gateways,a=state.aliases;
- $('providers-list').innerHTML=p.length?table(['نام Provider','Base URL','کلید API','عملیات'],p.map(x=>[`<b>${esc(x.name)}</b>`,`<code>${esc(x.base_url)}</code>`,x.has_key?'<span class="tag good">رمزگذاری‌شده</span>':'—',`<div class="toolbar"><button class="btn small" onclick="openProvider('${x.id}')">ویرایش</button><button class="btn small danger" onclick="removeRecord('providers','${x.id}')">حذف</button></div>`])):empty('هیچ Provider ثبت نشده','ابتدا سرویس ZRO یا ارائه‌دهنده دیگری را اضافه کنید.');
+ $('providers-list').innerHTML=p.length?table(['نام Provider','Base URL','کلیدهای API','عملیات'],p.map(x=>[`<b>${esc(x.name)}</b>`,`<code>${esc(x.base_url)}</code>`,`<span class="tag good">${state.keys.filter(k=>k.provider_id===x.id).length} کلید رمزگذاری‌شده</span>`,`<div class="toolbar"><button class="btn small" onclick="showPage('keys');openProviderKey('', '${x.id}')">+ کلید API</button><button class="btn small" onclick="openProvider('${x.id}')">ویرایش</button><button class="btn small danger" onclick="removeRecord('providers','${x.id}')">حذف</button></div>`])):empty('هیچ Provider ثبت نشده','ابتدا سرویس ZRO یا ارائه‌دهنده دیگری را اضافه کنید.');
+ $('keys-list').innerHTML=state.keys.length?table(['Provider','نام کلید','اثر انگشت','اولویت','وضعیت','آخرین استفاده','عملیات'],state.keys.map(k=>{
+  const label=esc(p.find(x=>x.id===k.provider_id)?.name||'—');
+  const st=!k.enabled?'<span class="tag">غیرفعال</span>':k.status==='billing_blocked'?'<span class="tag bad">Billing مسدود</span>':'<span class="tag good">آماده</span>';
+  return [label,`<b>${esc(k.label)}</b>`,`<code>${esc(k.fingerprint)}</code>`,`<span class="mono">${k.priority}</span>`,st,`<span class="mono">${k.last_used_at?esc(new Date(k.last_used_at).toLocaleString('fa-IR')):'—'}</span>`,`<div class="toolbar">${k.status==='billing_blocked'?`<button class="btn small primary" onclick="resetProviderKey('${k.provider_id}','${k.id}')">بازنشانی Billing</button>`:''}<button class="btn small" onclick="openProviderKey('${k.id}')">ویرایش</button><button class="btn small danger" onclick="deleteProviderKey('${k.provider_id}','${k.id}')">حذف</button></div>`];
+ })):empty('هنوز کلیدی ثبت نشده','یک کلید از حساب Provider دریافت و به برنامه اضافه کنید.');
  $('gateways-list').innerHTML=g.length?table(['نام پروفایل','وضعیت','مدل‌ها','عملیات'],g.map(x=>[`<b>${esc(x.name)}</b>`,x.active?'<span class="tag good">فعال</span>':'<span class="tag">غیرفعال</span>',`<span class="mono">${a.filter(z=>z.gateway_id===x.id).length}</span>`,`<div class="toolbar">${x.active?'':`<button class="btn small primary" onclick="activateGateway('${x.id}')">فعال‌سازی</button>`}<button class="btn small" onclick="openGateway('${x.id}')">ویرایش</button><button class="btn small" onclick="rotateGateway('${x.id}')">کلید جدید</button><button class="btn small danger" onclick="removeRecord('gateways','${x.id}')">حذف</button></div>`])):empty('هنوز Gateway ندارید','یک پروفایل بسازید و کلید دسترسی محلی آن را کپی کنید.');
  $('aliases-list').innerHTML=a.length?table(['Gateway','مدل ورودی','Provider','مدل مقصد','وضعیت','عملیات'],a.map(x=>[`<b>${esc(g.find(z=>z.id===x.gateway_id)?.name||'—')}</b>`,`<code>${esc(x.incoming)}</code>`,esc(p.find(z=>z.id===x.provider_id)?.name||'—'),`<code>${esc(x.target)}</code>`,x.enabled?'<span class="tag good">فعال</span>':'<span class="tag bad">غیرفعال</span>',`<div class="toolbar"><button class="btn small" onclick="openAlias('${x.id}')">ویرایش</button><button class="btn small danger" onclick="removeRecord('aliases','${x.id}')">حذف</button></div>`])):empty('هیچ Alias تعریف نشده','مثلاً claude-sonnet-5 را به deepseek-v4.1-flash متصل کنید.');
  $('events-list').innerHTML=state.events.length?table(['زمان','مدل ورودی','مدل مقصد','کد پاسخ','مدت'],state.events.map(x=>[`<span class="mono">${esc(new Date(x.when).toLocaleString('fa-IR'))}</span>`,`<code>${esc(x.incoming)}</code>`,`<code>${esc(x.target)}</code>`,`<span class="tag ${x.status>=400?'bad':'good'}">${x.status}</span>`,`<span class="mono">${x.duration_ms} ms</span>`])):empty('درخواستی ثبت نشده','بعد از ارسال درخواست از Claude، اینجا نتیجه را خواهید دید.');
@@ -105,11 +119,11 @@ function modal(title,fields,submit){$('modal-title').textContent=title;$('form-f
 function closeEditor(){$('editor').close()}
 function openProvider(id=''){
  const v=state.providers.find(x=>x.id===id);
- modal(v?'ویرایش Provider':'ثبت Provider جدید',field('name','نام Provider',v?.name||'ZRO','required maxlength="120"')+field('base_url','آدرس اصلی API',v?.base_url||'https://zro.moonmath.ai','required dir="ltr"')+field('api_key',v?'کلید جدید (اختیاری)':'کلید API', '',v?'type="password" autocomplete="new-password"':'type="password" autocomplete="new-password" required','کلید در پاسخ API بازگردانده نمی‌شود و روی ویندوز رمزگذاری می‌شود.'),async values=>api('providers'+(id?'/'+id:''),id?'PUT':'POST',values));
+ modal(v?'ویرایش Provider':'ثبت Provider جدید',field('name','نام Provider',v?.name||'ZRO','required maxlength="120"')+field('base_url','آدرس اصلی API',v?.base_url||'https://zro.moonmath.ai','required dir="ltr"')+field('api_key',v?'افزودن یک کلید جدید (اختیاری)':'اولین کلید API', '',v?'type="password" autocomplete="new-password"':'type="password" autocomplete="new-password" required','برای ثبت کلیدهای بیشتر و تعیین اولویت از بخش «کلیدهای API» استفاده کنید.'),async values=>api('providers'+(id?'/'+id:''),id?'PUT':'POST',values));
 }
 function openGateway(id=''){
  const v=state.gateways.find(x=>x.id===id);
- modal(v?'ویرایش Gateway':'ساخت Gateway',field('name','نام پروفایل',v?.name||'Claude Desktop','required maxlength="120"'),async values=>{
+ modal(v?'ویرایش Gateway':'ساخت Gateway',field('name','نام پروفایل',v?.name||'Claude Desktop','required maxlength="120"')+(v?'':field('client_key','کلید محلی دلخواه (اختیاری)','','type="text" autocomplete="off" minlength="24" maxlength="256" dir="ltr"','اگر خالی باشد، AliasPort یک کلید تصادفی امن تولید می‌کند. این کلید مربوط به اتصال Claude به AliasPort است.')),async values=>{
   const out=await api('gateways'+(id?'/'+id:''),id?'PUT':'POST',values);
   if(out.client_key)setTimeout(()=>showKey(out.client_key),60);
  });
@@ -125,7 +139,32 @@ function openAlias(id=''){
 }
 async function removeRecord(type,id){if(!confirm('این مورد حذف شود؟ این عملیات برگشت‌پذیر نیست.'))return;await action(()=>api(type+'/'+id,'DELETE'))}
 async function activateGateway(id){await action(()=>api('gateways/'+id+'/activate','POST'))}
-async function rotateGateway(id){if(!confirm('کلید قبلی فوراً باطل می‌شود. کلید جدید بسازیم؟'))return;try{const out=await api('gateways/'+id+'/rotate','POST');showKey(out.client_key);await reload()}catch(e){notify(e.message,true)}}
+function rotateGateway(id){
+ modal('تعویض کلید محلی Gateway',
+  '<div class="notice">کلید فعلی بعد از ذخیره فوراً باطل می‌شود؛ Claude Desktop را با کلید جدید تنظیم کنید.</div>'+
+  field('client_key','کلید جدید دلخواه (اختیاری)','','type="text" autocomplete="off" minlength="24" maxlength="256" dir="ltr"','اگر خالی باشد، یک کلید تصادفی امن ایجاد می‌شود.'),
+  async values=>{const out=await api('gateways/'+id+'/rotate','POST',values);setTimeout(()=>showKey(out.client_key),60)}
+ );
+}
+function openProviderKey(id='',providerId=''){
+ if(!state.providers.length){notify('ابتدا یک Provider بسازید',true);return}
+ const k=state.keys.find(x=>x.id===id);
+ const list=state.providers.map(x=>({id:x.id,name:x.name}));
+ const provider=k?.provider_id||providerId||list[0].id;
+ const fields=selectField('provider_id','Provider',list,provider)+
+ field('label','عنوان کلید',k?.label||'Key '+(state.keys.filter(x=>x.provider_id===provider).length+1),'required maxlength="100"')+
+ field('priority','اولویت اجرا (عدد کمتر، زودتر)',String(k?.priority??state.keys.filter(x=>x.provider_id===provider).length*100),'type="number" min="0" max="1000000" required dir="ltr"')+
+ field('api_key',k?'کلید جدید (خالی = بدون تغییر)':'API Key صادرشده توسط Provider','',k?'type="password" autocomplete="new-password"':'type="password" autocomplete="new-password" required')+
+ `<div class="field"><label><input id="f-enabled" name="enabled" type="checkbox" style="width:auto" ${k&&!k.enabled?'':'checked'}> فعال باشد</label></div>`;
+ modal(k?'ویرایش کلید Provider':'افزودن کلید Provider',fields,async values=>{
+  const chosen=k?.provider_id||values.provider_id;
+  return api('providers/'+chosen+'/keys'+(id?'/'+id:''),id?'PUT':'POST',{
+   label:values.label,priority:Number(values.priority),enabled:!!values.enabled,api_key:values.api_key
+  });
+ });
+}
+async function resetProviderKey(providerId,id){if(!confirm('بعد از بررسی موجودی یا اصلاح Billing، این کلید دوباره قابل استفاده شود؟'))return;await action(()=>api('providers/'+providerId+'/keys/'+id+'/reset','POST'))}
+async function deleteProviderKey(providerId,id){if(!confirm('این API Key از برنامه حذف شود؟'))return;await action(()=>api('providers/'+providerId+'/keys/'+id,'DELETE'))}
 function showKey(key){$('key-value').textContent=key;$('key-dialog').showModal()}
 async function copyToken(){try{await navigator.clipboard.writeText($('key-value').textContent);notify('کلید کپی شد')}catch{notify('کپی خودکار ممکن نیست؛ کلید را دستی کپی کنید',true)}}
 reload();
