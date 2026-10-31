@@ -6,12 +6,13 @@
 - Providers, profiles, exact per-profile alias rules
 - Profile switching without restarting active streaming requests
 - ZRO-compatible Anthropic Messages proxy with SSE streaming
-- Hashed per-profile client keys, Windows DPAPI encryption for provider keys
+- Hashed per-profile client keys (custom or generated), Windows DPAPI encryption for multiple per-provider API keys
+- Ordered provider credentials with billing-only failover, persistent quarantine and manual reset
 - Lightweight request metadata and connection tests
 - Windows build.bat (windowsgui) and automatic browser launch
 
 ## Phase 2: Production hardening
-- Improved request auditing, response parsing, explicit timeout and retry policies
+- Improved request auditing, per-key billing events, explicit timeout and retry policies
 - Connection health and endpoint capability tests, fixtures for streaming/tool calls
 - Automatic startup option, minimize-to-tray and graceful shutdown
 - Import/export with secrets stripped and configurable migrations
