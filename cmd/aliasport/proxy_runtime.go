@@ -11,26 +11,33 @@ import (
  "time"
 )
 
-// Only one profile listens at any given time. Each profile stores its own
-// listening port, so switching profiles also switches the proxy endpoint.
+// Every active Gateway has its own listener and protocol. Sharing a Provider
+// between Gateway profiles does not share their client credentials or aliases.
+type gatewayContextKey struct{}
+type proxyListener struct{
+ server *http.Server
+ listener net.Listener
+ port int
+}
 type proxyManager struct {
  mu sync.Mutex
  app *App
- listener net.Listener
- server *http.Server
- port int
+ running map[string]*proxyListener
 }
-
-func newProxyManager(app *App)*proxyManager{return &proxyManager{app:app}}
+func newProxyManager(app *App)*proxyManager{return &proxyManager{app:app,running:make(map[string]*proxyListener)}}
 
 func (m *proxyManager)listen(port int)(net.Listener,error){
- if port<1024||port>65535||port==8787 {return nil,errors.New("invalid gateway port")}
+ if port<1024||port>65535{return nil,errors.New("invalid gateway port")}
+ if m.app.adminPort!=""{
+  _,adminPort,err:=net.SplitHostPort(m.app.adminPort)
+  if err==nil && adminPort==strconv.Itoa(port){return nil,errors.New("proxy port cannot equal management port")}
+ }
  address:=net.JoinHostPort("127.0.0.1",strconv.Itoa(port))
  listener,err:=net.Listen("tcp",address)
- if err!=nil{return nil,fmt.Errorf("proxy port %d is unavailable: %w",port,err)}
+ if err!=nil{return nil,fmt.Errorf("proxy port %d unavailable: %w",port,err)}
  return listener,nil
 }
-func(m *proxyManager)serve(l net.Listener) *http.Server{
+func(m *proxyManager)serve(l net.Listener,id string)*proxyListener{
  mux:=http.NewServeMux()
  mux.HandleFunc("/health",func(w http.ResponseWriter,r *http.Request){
   writeJSON(w,200,map[string]any{"ok":true,"service":"aliasport-gateway"})
@@ -39,86 +46,83 @@ func(m *proxyManager)serve(l net.Listener) *http.Server{
  mux.HandleFunc("/v1/messages",m.app.messages)
  mux.HandleFunc("/v1/messages/count_tokens",m.app.messages)
  mux.HandleFunc("/v1/chat/completions",m.app.chatCompletions)
- server:=&http.Server{Handler:mux,ReadHeaderTimeout:10*time.Second,IdleTimeout:2*time.Minute}
+ scoped:=http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
+  mux.ServeHTTP(w,r.WithContext(context.WithValue(r.Context(),gatewayContextKey{},id)))
+ })
+ server:=&http.Server{Handler:scoped,ReadHeaderTimeout:10*time.Second,IdleTimeout:2*time.Minute}
  go func(){_ = server.Serve(l)}()
- return server
+ return &proxyListener{server:server,listener:l,port:l.Addr().(*net.TCPAddr).Port}
 }
 func(m *proxyManager)startFromDatabase()error{
- g,err:=m.app.store.ActiveGateway()
- if errors.Is(err,ErrNotFound){return nil}
- if err!=nil{return err}
+ gateways,err:=m.app.store.ActiveGateways();if err!=nil{return err}
  m.mu.Lock();defer m.mu.Unlock()
- listener,err:=m.listen(g.Port);if err!=nil{return err}
- m.listener=listener
- m.server=m.serve(listener)
- m.port=g.Port
+ for _,g:=range gateways{
+  l,e:=m.listen(g.Port)
+  if e!=nil{
+   for _,instance:=range m.running{_ = instance.server.Close()}
+   m.running=make(map[string]*proxyListener)
+   return fmt.Errorf("Gateway %s: %w",g.Name,e)
+  }
+  m.running[g.ID]=m.serve(l,g.ID)
+ }
  return nil
 }
 func(m *proxyManager)switchTo(id string)error{
+ m.mu.Lock();defer m.mu.Unlock()
+ if _,ok:=m.running[id];ok{return nil}
  g,err:=m.app.store.GatewayByID(id);if err!=nil{return err}
- m.mu.Lock()
- defer m.mu.Unlock()
- if m.listener!=nil&&m.port==g.Port{return m.app.store.ActivateGateway(id)}
  listener,err:=m.listen(g.Port);if err!=nil{return err}
  if err=m.app.store.ActivateGateway(id);err!=nil{_ = listener.Close();return err}
- previous:=m.server
- m.listener=listener
- m.server=m.serve(listener)
- m.port=g.Port
- if previous!=nil{go drainProxy(previous)}
+ m.running[id]=m.serve(listener,id)
  return nil
 }
 func(m *proxyManager)updateGateway(g Gateway)(Gateway,error){
- m.mu.Lock()
- defer m.mu.Unlock()
- // If an active profile changes port, acquire the replacement first.
- old,err:=m.app.store.GatewayByID(g.ID)
- if err!=nil{return Gateway{},err}
+ m.mu.Lock();defer m.mu.Unlock()
+ old,err:=m.app.store.GatewayByID(g.ID);if err!=nil{return Gateway{},err}
  var replacement net.Listener
- if old.Active && m.port!=g.Port {
+ if old.Active && old.Port!=g.Port {
   replacement,err=m.listen(g.Port)
   if err!=nil{return Gateway{},err}
  }
  saved,err:=m.app.store.SaveGateway(g)
  if err!=nil{if replacement!=nil{_ = replacement.Close()};return Gateway{},err}
  if replacement!=nil{
-  oldServer:=m.server
-  m.listener=replacement;m.server=m.serve(replacement);m.port=saved.Port
-  if oldServer!=nil{go drainProxy(oldServer)}
+  previous:=m.running[g.ID]
+  m.running[g.ID]=m.serve(replacement,g.ID)
+  if previous!=nil{go drainProxy(previous.server)}
  }
  return saved,nil
 }
 func(m *proxyManager)removeGateway(id string)error{
- m.mu.Lock()
- defer m.mu.Unlock()
- old,err:=m.app.store.GatewayByID(id);if err!=nil{return err}
- if err=m.app.store.DeleteGateway(id);err!=nil{return err}
- if old.Active{
-  previous:=m.server;m.server=nil;m.listener=nil;m.port=0
-  if previous!=nil{go drainProxy(previous)}
+ m.mu.Lock();defer m.mu.Unlock()
+ if _,err:=m.app.store.GatewayByID(id);err!=nil{return err}
+ if err:=m.app.store.DeleteGateway(id);err!=nil{return err}
+ if previous,ok:=m.running[id];ok{
+  delete(m.running,id)
+  go drainProxy(previous.server)
  }
  return nil
 }
 func(m *proxyManager)deactivate(id string)error{
  m.mu.Lock();defer m.mu.Unlock()
- g,err:=m.app.store.GatewayByID(id);if err!=nil{return err}
- if err=m.app.store.DeactivateGateway(id);err!=nil{return err}
- if g.Active{
-  old:=m.server;m.server=nil;m.listener=nil;m.port=0
-  if old!=nil{go drainProxy(old)}
+ if err:=m.app.store.DeactivateGateway(id);err!=nil{return err}
+ if previous,ok:=m.running[id];ok{
+  delete(m.running,id)
+  go drainProxy(previous.server)
  }
  return nil
 }
 func drainProxy(server *http.Server){
- // Preserve in-flight stream connections for up to five minutes on profile
- // changes; new requests cannot be accepted by the old listener.
  ctx,cancel:=context.WithTimeout(context.Background(),5*time.Minute)
  defer cancel()
  if err:=server.Shutdown(ctx);err!=nil{_ = server.Close()}
 }
 func(m *proxyManager)close(){
  m.mu.Lock();defer m.mu.Unlock()
- if m.server!=nil{_ = m.server.Close();m.server=nil;m.listener=nil;m.port=0}
+ for id,instance:=range m.running{
+  _ = instance.server.Close()
+  delete(m.running,id)
+ }
 }
 func(s *Store)DeactivateGateway(id string)error{
  res,err:=s.db.Exec("UPDATE gateways SET active=0 WHERE id=?",id)
