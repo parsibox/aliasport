@@ -204,6 +204,57 @@ async function reload(){
   render();
  }catch(e){notify('عدم ارتباط با API: '+e.message,true)}
 }
+function setListFilter(name,value){
+ if(!Object.hasOwn(listFilters,name))return;
+ listFilters[name]=String(value);
+ if(name.startsWith('aliases'))selectedAliasIds.clear();
+ if(name.startsWith('keys'))selectedKeyIds.clear();
+ render();
+}
+function matchesListSearch(needle,values){
+ const tokens=String(needle).trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+ if(!tokens.length)return true;
+ const combined=values.map(x=>String(x??'')).join(' ').toLocaleLowerCase();
+ return tokens.every(token=>combined.includes(token));
+}
+function visibleProviders(){
+ return state.providers.filter(p=>matchesListSearch(listFilters.providersSearch,[p.name,p.base_url,p.api_type,protocolLabel(p.api_type)]));
+}
+function visibleGateways(){
+ return state.gateways.filter(g=>matchesListSearch(listFilters.gatewaysSearch,[g.name,g.port,g.input_type,protocolLabel(g.input_type),g.active?'فعال':'غیرفعال']));
+}
+function visibleProviderKeys(){
+ return state.keys.filter(k=>(!listFilters.keysProvider||k.provider_id===listFilters.keysProvider)&&
+  matchesListSearch(listFilters.keysSearch,[
+   k.label,k.fingerprint,k.priority,k.status,k.enabled?'فعال':'غیرفعال',
+   state.providers.find(p=>p.id===k.provider_id)?.name
+  ]));
+}
+function visibleAliases(){
+ return state.aliases.filter(a=>
+  (!listFilters.aliasesProvider||a.provider_id===listFilters.aliasesProvider)&&
+  (!listFilters.aliasesGateway||a.gateway_id===listFilters.aliasesGateway)&&
+  (!listFilters.aliasesStatus||(a.enabled?'enabled':'disabled')===listFilters.aliasesStatus)&&
+  matchesListSearch(listFilters.aliasesSearch,[
+   a.incoming,a.target,a.enabled?'فعال':'غیرفعال',
+   state.providers.find(p=>p.id===a.provider_id)?.name,
+   state.gateways.find(g=>g.id===a.gateway_id)?.name
+  ]));
+}
+function visibleEvents(){
+ return state.events.filter(e=>matchesListSearch(listFilters.eventsSearch,[
+  e.incoming,e.target,e.status,e.duration_ms,e.when,new Date(e.when).toLocaleString('fa-IR')
+ ]));
+}
+function refreshSelectOptions(id,rows,label,filterKey){
+ const select=$(id);
+ if(!select)return;
+ const options=[{id:'',name:label},...rows.map(item=>({id:item.id,name:item.name}))];
+ if(!options.some(x=>x.id===listFilters[filterKey]))listFilters[filterKey]='';
+ const html=options.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');
+ if(select.innerHTML!==html)select.innerHTML=html;
+ select.value=listFilters[filterKey];
+}
 function render(){
  $('stat-providers').textContent=state.overview.providers;
  $('stat-gateways').textContent=state.overview.gateways;
@@ -211,17 +262,32 @@ function render(){
  $('stat-active').textContent=state.overview.active_gateway||'تنظیم نشده';
  $('dashboard-proxy-url').textContent=state.overview.gateway_url||'هنوز Gateway فعالی انتخاب نشده';
  const p=state.providers,g=state.gateways,a=state.aliases;
- $('providers-list').innerHTML=p.length?table(['نام Provider','Base URL','نوع API مقصد','کلیدهای API','عملیات'],p.map(x=>[`<b>${esc(x.name)}</b>`,`<code>${esc(x.base_url)}</code>`,`<span class="tag">${esc(protocolLabel(x.api_type))}</span>`,`<span class="tag good">${state.keys.filter(k=>k.provider_id===x.id).length} کلید رمزگذاری‌شده</span>`,`<div class="toolbar"><button class="btn small" onclick="probeProvider('${x.id}','models')">مدل‌ها / تست اتصال</button><button class="btn small" onclick="probeProvider('${x.id}','balance')">موجودی</button><button class="btn small" onclick="showPage('keys');openProviderKey('', '${x.id}')">+ کلید API</button><button class="btn small" onclick="openProvider('${x.id}')">ویرایش</button><button class="btn small danger" onclick="removeRecord('providers','${x.id}')">حذف</button></div>`])):empty('هیچ Provider ثبت نشده','برای شروع یک Provider از فهرست آماده انتخاب کنید یا تنظیمات آن را دستی وارد کنید.');
- $('keys-list').innerHTML=state.keys.length?table(['Provider','نام کلید','اثر انگشت','اولویت','وضعیت','آخرین استفاده','عملیات'],state.keys.map(k=>{
+ refreshSelectOptions('keys-filter-provider',p,'همه Providerها','keysProvider');
+ refreshSelectOptions('aliases-filter-provider',p,'همه Providerها','aliasesProvider');
+ refreshSelectOptions('aliases-filter-gateway',g,'همه Gatewayها','aliasesGateway');
+ const filteredProviders=visibleProviders();
+ const filteredGateways=visibleGateways();
+ const filteredKeys=visibleProviderKeys();
+ const filteredAliases=visibleAliases();
+ const filteredEvents=visibleEvents();
+ for(const [id,count,total] of [
+  ['providers-filter-count',filteredProviders.length,p.length],
+  ['gateways-filter-count',filteredGateways.length,g.length],
+  ['keys-filter-count',filteredKeys.length,state.keys.length],
+  ['aliases-filter-count',filteredAliases.length,a.length],
+  ['events-filter-count',filteredEvents.length,state.events.length]
+ ]) $(id).textContent=count+' از '+total+' مورد';
+ $('providers-list').innerHTML=filteredProviders.length?table(['نام Provider','Base URL','نوع API مقصد','کلیدهای API','عملیات'],filteredProviders.map(x=>[`<b>${esc(x.name)}</b>`,`<code>${esc(x.base_url)}</code>`,`<span class="tag">${esc(protocolLabel(x.api_type))}</span>`,`<span class="tag good">${state.keys.filter(k=>k.provider_id===x.id).length} کلید رمزگذاری‌شده</span>`,`<div class="toolbar"><button class="btn small" onclick="probeProvider('${x.id}','models')">مدل‌ها / تست اتصال</button><button class="btn small" onclick="probeProvider('${x.id}','balance')">موجودی</button><button class="btn small primary" onclick="openProviderKey('', '${x.id}')">ایجاد کلید API</button><button class="btn small" onclick="openAlias('', '${x.id}')">ایجاد قانون Alias</button><button class="btn small" onclick="openProvider('${x.id}')">ویرایش</button><button class="btn small danger" onclick="removeRecord('providers','${x.id}')">حذف</button></div>`])):empty('Provider با این جست‌وجو پیدا نشد','برای شروع یک Provider از فهرست آماده انتخاب کنید یا تنظیمات آن را دستی وارد کنید.');
+ $('keys-list').innerHTML=filteredKeys.length?table(['<label title="انتخاب همه کلیدهای قابل مشاهده"><input id="keys-select-all" type="checkbox" class="alias-select-checkbox" aria-label="انتخاب همه کلیدهای API قابل مشاهده" onchange="toggleAllProviderKeys(this.checked)"></label>','Provider','نام کلید','اثر انگشت','اولویت','وضعیت','آخرین استفاده','عملیات'],filteredKeys.map(k=>{
   const label=esc(p.find(x=>x.id===k.provider_id)?.name||'—');
   const st=!k.enabled?'<span class="tag">غیرفعال</span>':k.status==='billing_blocked'?'<span class="tag bad">Billing مسدود</span>':'<span class="tag good">آماده</span>';
-  return [label,`<b>${esc(k.label)}</b>`,`<code>${esc(k.fingerprint)}</code>`,`<span class="mono">${k.priority}</span>`,st,`<span class="mono">${k.last_used_at?esc(new Date(k.last_used_at).toLocaleString('fa-IR')):'—'}</span>`,`<div class="toolbar">${k.status==='billing_blocked'?`<button class="btn small primary" onclick="resetProviderKey('${k.provider_id}','${k.id}')">بازنشانی Billing</button>`:''}<button class="btn small" onclick="openProviderKey('${k.id}')">ویرایش</button><button class="btn small danger" onclick="deleteProviderKey('${k.provider_id}','${k.id}')">حذف</button></div>`];
- })):empty('هنوز کلیدی ثبت نشده','یک کلید از حساب Provider دریافت و به برنامه اضافه کنید.');
- $('gateways-list').innerHTML=g.length?table(['نام پروفایل','پورت پروکسی','پروتکل ورودی','وضعیت','مدل‌ها','عملیات'],g.map(x=>[`<b>${esc(x.name)}</b>`,`<code>127.0.0.1:${Number(x.port)}</code>`,`<span class="tag">${esc(protocolLabel(x.input_type))}</span>`,x.active?'<span class="tag good">در حال اجرا</span>':'<span class="tag">متوقف</span>',`<span class="mono">${a.filter(z=>z.gateway_id===x.id).length}</span>`,`<div class="toolbar">${x.active?`<button class="btn small" onclick="deactivateGateway('${x.id}')">توقف پروکسی</button>`:`<button class="btn small primary" onclick="activateGateway('${x.id}')">اجرا</button>`}<button class="btn small" onclick="openGateway('${x.id}')">ویرایش</button><button class="btn small" onclick="rotateGateway('${x.id}')">کلید جدید</button><button class="btn small danger" onclick="removeRecord('gateways','${x.id}')">حذف</button></div>`])):empty('هنوز Gateway ندارید','یک پروفایل بسازید و برای آن پورت، نوع ورودی و کلید محلی تعیین کنید.');
- $('aliases-list').innerHTML=a.length?table([
+  return [`<input type="checkbox" class="alias-select-checkbox provider-key-select" data-key-id="${k.id}" aria-label="انتخاب کلید ${esc(k.label)}" onchange="toggleProviderKeySelection('${k.id}',this.checked)" ${selectedKeyIds.has(k.id)?'checked':''}>`,label,`<b>${esc(k.label)}</b>`,`<code>${esc(k.fingerprint)}</code>`,`<span class="mono">${k.priority}</span>`,st,`<span class="mono">${k.last_used_at?esc(new Date(k.last_used_at).toLocaleString('fa-IR')):'—'}</span>`,`<div class="toolbar">${k.status==='billing_blocked'?`<button class="btn small primary" onclick="resetProviderKey('${k.provider_id}','${k.id}')">بازنشانی Billing</button>`:''}<button class="btn small" onclick="openProviderKey('${k.id}')">ویرایش</button><button class="btn small danger" onclick="deleteProviderKey('${k.provider_id}','${k.id}')">حذف</button></div>`];
+ })):empty('کلیدی با این فیلتر پیدا نشد','یک کلید از حساب Provider دریافت و به برنامه اضافه کنید.');
+ $('gateways-list').innerHTML=filteredGateways.length?table(['نام پروفایل','پورت پروکسی','پروتکل ورودی','وضعیت','مدل‌ها','عملیات'],filteredGateways.map(x=>[`<b>${esc(x.name)}</b>`,`<code>127.0.0.1:${Number(x.port)}</code>`,`<span class="tag">${esc(protocolLabel(x.input_type))}</span>`,x.active?'<span class="tag good">در حال اجرا</span>':'<span class="tag">متوقف</span>',`<span class="mono">${a.filter(z=>z.gateway_id===x.id).length}</span>`,`<div class="toolbar">${x.active?`<button class="btn small" onclick="deactivateGateway('${x.id}')">توقف پروکسی</button>`:`<button class="btn small primary" onclick="activateGateway('${x.id}')">اجرا</button>`}<button class="btn small" onclick="openGateway('${x.id}')">ویرایش</button><button class="btn small" onclick="rotateGateway('${x.id}')">کلید جدید</button><button class="btn small danger" onclick="removeRecord('gateways','${x.id}')">حذف</button></div>`])):empty('Gateway مطابق فیلتر پیدا نشد','یک پروفایل بسازید و برای آن پورت، نوع ورودی و کلید محلی تعیین کنید.');
+ $('aliases-list').innerHTML=filteredAliases.length?table([
   '<label title="انتخاب همه Aliasها"><input id="alias-select-all" type="checkbox" class="alias-select-checkbox" aria-label="انتخاب همه Aliasها" onchange="toggleAllAliases(this.checked)"></label>',
   'Gateway','مدل ورودی (دقیق یا *)','Provider','مدل مقصد','وضعیت','عملیات'
- ],a.map(x=>[
+ ],filteredAliases.map(x=>[
   `<input type="checkbox" class="alias-select-checkbox alias-select" data-alias-id="${x.id}" aria-label="انتخاب ${esc(x.incoming)}" onchange="toggleAliasSelection('${x.id}',this.checked)" ${selectedAliasIds.has(x.id)?'checked':''}>`,
   `<b>${esc(g.find(z=>z.id===x.gateway_id)?.name||'—')}</b>`,
   `<code>${esc(x.incoming)}</code>${x.incoming==='*'?' <span class="tag good">همه مدل‌ها</span>':''}`,
@@ -229,9 +295,10 @@ function render(){
   `<code>${esc(x.target)}</code>`,
   x.enabled?'<span class="tag good">فعال</span>':'<span class="tag bad">غیرفعال</span>',
   `<div class="toolbar"><button class="btn small" onclick="openAlias('${x.id}')">ویرایش</button><button class="btn small danger" onclick="removeRecord('aliases','${x.id}')">حذف</button></div>`
- ])):empty('هیچ Alias تعریف نشده','برای هر مدل ورودی، مدل مقصد همان Provider را ثبت کنید.');
+ ])):empty('Alias با این فیلتر پیدا نشد','برای هر مدل ورودی، مدل مقصد همان Provider را ثبت کنید.');
  refreshAliasBulkToolbar();
- $('events-list').innerHTML=state.events.length?table(['زمان','مدل ورودی','مدل مقصد','کد پاسخ','مدت'],state.events.map(x=>[`<span class="mono">${esc(new Date(x.when).toLocaleString('fa-IR'))}</span>`,`<code>${esc(x.incoming)}</code>`,`<code>${esc(x.target)}</code>`,`<span class="tag ${x.status>=400?'bad':'good'}">${x.status}</span>`,`<span class="mono">${x.duration_ms} ms</span>`])):empty('درخواستی ثبت نشده','بعد از ارسال درخواست از Claude، اینجا نتیجه را خواهید دید.');
+ refreshProviderKeyBulkToolbar();
+ $('events-list').innerHTML=filteredEvents.length?table(['زمان','مدل ورودی','مدل مقصد','کد پاسخ','مدت'],filteredEvents.map(x=>[`<span class="mono">${esc(new Date(x.when).toLocaleString('fa-IR'))}</span>`,`<code>${esc(x.incoming)}</code>`,`<code>${esc(x.target)}</code>`,`<span class="tag ${x.status>=400?'bad':'good'}">${x.status}</span>`,`<span class="mono">${x.duration_ms} ms</span>`])):empty('درخواستی مطابق جست‌وجو پیدا نشد','بعد از ارسال درخواست از Claude، اینجا نتیجه را خواهید دید.');
 }
 function table(headers,rows){return `<div class="tablewrap"><table><thead><tr>${headers.map(x=>`<th>${x}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`}
 function empty(title,description){return `<div class="empty"><b>${title}</b>${description}</div>`}
@@ -504,13 +571,13 @@ function renderModelPicker(){
  }
 }
 
-function openAlias(id=''){
+function openAlias(id='',providerId=''){
  if(!state.gateways.length||!state.providers.length){notify('اول یک Gateway و Provider بسازید',true);return}
  const v=state.aliases.find(x=>x.id===id);
  const gs=state.gateways.map(x=>({id:x.id,name:x.name+(x.active?' (فعال)':'')}));
  const ps=state.providers.map(x=>({id:x.id,name:x.name}));
  const defaultGateway=v?.gateway_id||state.gateways.find(x=>x.active)?.id||gs[0].id;
- const fields=selectField('gateway_id','Gateway',gs,defaultGateway)+selectField('provider_id','Provider مقصد',ps,v?.provider_id||ps[0].id)+incomingModelField(v?.incoming||'claude-sonnet-5')+field('target','مدل واقعی Provider',v?.target||'','required dir="ltr"')+`<div class="field"><label><input id="f-enabled" name="enabled" type="checkbox" style="width:auto" ${v&&!v.enabled?'':'checked'}> قانون فعال باشد</label></div>`;
+ const fields=selectField('gateway_id','Gateway',gs,defaultGateway)+selectField('provider_id','Provider مقصد',ps,v?.provider_id||providerId||ps[0].id)+incomingModelField(v?.incoming||'claude-sonnet-5')+field('target','مدل واقعی Provider',v?.target||'','required dir="ltr"')+`<div class="field"><label><input id="f-enabled" name="enabled" type="checkbox" style="width:auto" ${v&&!v.enabled?'':'checked'}> قانون فعال باشد</label></div>`;
  modal(v?'ویرایش Alias':'ساخت Alias جدید',fields,async values=>api('aliases'+(id?'/'+id:''),id?'PUT':'POST',{...values,enabled:!!values.enabled}));
 }
 function toggleAliasSelection(id,checked){
