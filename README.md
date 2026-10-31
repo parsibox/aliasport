@@ -18,6 +18,19 @@ Active gateway: http://127.0.0.1:18765
 
 The browser opens automatically. The built Windows executable uses `-H windowsgui` and opens no console window.
 
+### Custom Windows icon
+
+AliasPort includes its own blue/violet **A + gateway** app icon, stored as editable vector artwork at [`assets/aliasport.svg`](assets/aliasport.svg).
+
+Running `build.bat` now:
+1. Runs the included standard-library Go icon generator (`go run ./tools/icon`) to produce a multi-resolution `assets/aliasport.ico` (16, 24, 32, 48, 64, 128, 256 px), an PNG preview and the web favicon.
+2. Uses pinned `github.com/akavel/rsrc@v0.10.2` to create `cmd/aliasport/rsrc_windows_amd64.syso` from the ICO.
+3. Compiles `dist/AliasPort.exe` with `-H=windowsgui`, automatically linking the icon resource so Windows Explorer, desktop shortcuts and the taskbar display the branded icon instead of the default Go icon.
+
+The resource tool is downloaded automatically with Go on first build; no Visual Studio, image editor, or installed resource compiler is needed. Generated PNG, ICO, and SYSo files are intentionally ignored by Git and recreated on every build. The target platform is **Windows amd64**.
+
+If Windows Explorer caches the old icon after you replace an existing EXE, rename the EXE or refresh the Windows icon cache; the embedded resource itself is generated during build.
+
 ### Exit the program completely
 
 In the management UI, open **تنظیمات** and choose **⏻ بستن برنامه**, then confirm. AliasPort closes both the management listener (port 8787) and the API gateway listener (port 18765), terminates active HTTP/SSE connections and exits the Go process. Saved SQLite configuration is preserved.
