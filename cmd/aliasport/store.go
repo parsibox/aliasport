@@ -24,6 +24,7 @@ type Provider struct {
  APIType string `json:"api_type"`
  Priority int `json:"priority"`
  Enabled *bool `json:"enabled,omitempty"`
+ GatewayIDs []string `json:"gateway_ids,omitempty"`
  HasKey bool `json:"has_key"`
  APIKey string `json:"api_key,omitempty"` // accepted on write, never returned
 }
@@ -87,7 +88,10 @@ func OpenStore(path string)(*Store,error){
   `CREATE TABLE IF NOT EXISTS gateways(
     id TEXT PRIMARY KEY, name TEXT NOT NULL, client_hash TEXT NOT NULL,
     active INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS one_active_gateway ON gateways(active) WHERE active=1`,
+  `CREATE TABLE IF NOT EXISTS gateway_providers(
+    gateway_id TEXT NOT NULL REFERENCES gateways(id) ON DELETE CASCADE,
+    provider_id TEXT NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
+    PRIMARY KEY(gateway_id,provider_id))`,
   `CREATE TABLE IF NOT EXISTS aliases(
     id TEXT PRIMARY KEY, gateway_id TEXT NOT NULL REFERENCES gateways(id) ON DELETE CASCADE,
     provider_id TEXT NOT NULL REFERENCES providers(id) ON DELETE RESTRICT,
@@ -104,6 +108,7 @@ func OpenStore(path string)(*Store,error){
  if err=store.migrateProtocols();err!=nil{db.Close();return nil,fmt.Errorf("protocol migration: %w",err)}
  if err=store.migrateProviderScopedAliases();err!=nil{db.Close();return nil,fmt.Errorf("provider-scoped aliases migration: %w",err)}
  if err=store.migrateProviderKeys();err!=nil{db.Close();return nil,fmt.Errorf("provider key migration: %w",err)}
+ if err=store.migrateGatewayProviders();err!=nil{db.Close();return nil,fmt.Errorf("gateway/provider migration: %w",err)}
  return store,nil
 }
 func(s *Store)Close()error{return s.db.Close()}
@@ -127,7 +132,13 @@ func(s *Store)Providers()([]Provider,error){
  rows,e:=s.db.Query("SELECT p.id,p.name,p.base_url,p.api_type,p.priority,p.enabled,EXISTS(SELECT 1 FROM provider_keys k WHERE k.provider_id=p.id) FROM providers p ORDER BY p.priority,p.rowid");if e!=nil{return nil,e};defer rows.Close()
  result:=[]Provider{}
  for rows.Next(){var p Provider;if e=rows.Scan(&p.ID,&p.Name,&p.BaseURL,&p.APIType,&p.Priority,&p.Enabled,&p.HasKey);e!=nil{return nil,e};result=append(result,p)}
- return result,rows.Err()
+ if err:=rows.Err();err!=nil{return nil,err}
+ if err:=rows.Close();err!=nil{return nil,err}
+ for i:=range result{
+  ids,e:=s.ProviderGatewayIDs(result[i].ID);if e!=nil{return nil,e}
+  result[i].GatewayIDs=ids
+ }
+ return result,nil
 }
 func(s *Store)SaveProvider(p Provider)(Provider,error){
  p.Name=strings.TrimSpace(p.Name)
@@ -229,7 +240,6 @@ func(s *Store)ActivateGateway(id string)error{
  var count int
  if e=tx.QueryRow("SELECT COUNT(*) FROM gateways WHERE id=?",id).Scan(&count);e!=nil{return e}
  if count==0{return ErrNotFound}
- if _,e=tx.Exec("UPDATE gateways SET active=0 WHERE active=1");e!=nil{return e}
  if _,e=tx.Exec("UPDATE gateways SET active=1 WHERE id=?",id);e!=nil{return e}
  return tx.Commit()
 }
@@ -315,11 +325,16 @@ func(s *Store)ActiveAuth()(string,error){
 // exact alias first, falling back to its own '*' alias. Higher-priority
 // Providers are attempted first; ties use creation order and stable ID.
 func(s *Store)RoutesFor(incoming string)([]Route,error){
+ g,e:=s.ActiveGateway();if e!=nil{return nil,e}
+ return s.RoutesForGateway(g.ID,incoming)
+}
+func(s *Store)RoutesForGateway(gatewayID,incoming string)([]Route,error){
  rows,err:=s.db.Query(`SELECT g.client_hash,a.target,p.base_url,p.id,p.api_type
  FROM gateways g
- JOIN providers p ON p.enabled=1
+ JOIN gateway_providers gp ON gp.gateway_id=g.id
+ JOIN providers p ON p.id=gp.provider_id AND p.enabled=1
  JOIN aliases a ON a.gateway_id=g.id AND a.provider_id=p.id AND a.enabled=1
- WHERE g.active=1 AND (a.incoming=? OR a.incoming='*')
+ WHERE g.active=1 AND g.id=? AND (a.incoming=? OR a.incoming='*')
  AND a.id=(
    SELECT best.id FROM aliases best
    WHERE best.gateway_id=g.id AND best.provider_id=p.id AND best.enabled=1
@@ -327,7 +342,7 @@ func(s *Store)RoutesFor(incoming string)([]Route,error){
    ORDER BY CASE WHEN best.incoming=? THEN 0 ELSE 1 END
    LIMIT 1
  )
- ORDER BY p.priority ASC,p.rowid ASC`,incoming,incoming,incoming)
+ ORDER BY p.priority ASC,p.rowid ASC`,gatewayID,incoming,incoming,incoming)
  if err!=nil{return nil,err}
  defer rows.Close()
  candidates:=[]Route{}
@@ -348,11 +363,16 @@ func(s *Store)RouteFor(incoming string)(Route,error){
  return all[0],nil
 }
 func(s *Store)ActiveModels()([]string,error){
+ g,e:=s.ActiveGateway();if e!=nil{return nil,e}
+ return s.ModelsForGateway(g.ID)
+}
+func(s *Store)ModelsForGateway(gatewayID string)([]string,error){
  rows,e:=s.db.Query(`SELECT DISTINCT a.incoming FROM aliases a
  JOIN gateways g ON g.id=a.gateway_id
+ JOIN gateway_providers gp ON gp.provider_id=a.provider_id AND gp.gateway_id=g.id
  JOIN providers p ON p.id=a.provider_id
- WHERE g.active=1 AND p.enabled=1 AND a.enabled=1 AND a.incoming<>'*'
- ORDER BY a.incoming`)
+ WHERE g.active=1 AND g.id=? AND p.enabled=1 AND a.enabled=1 AND a.incoming<>'*'
+ ORDER BY a.incoming`,gatewayID)
  if e!=nil{return nil,e}
  defer rows.Close()
  result:=[]string{}
