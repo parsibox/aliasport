@@ -303,28 +303,77 @@ func(s *Store)ActiveAuth()(string,error){
  e:=s.db.QueryRow("SELECT client_hash FROM gateways WHERE active=1").Scan(&hash)
  return hash,e
 }
+var ErrAmbiguousProvider=errors.New("multiple providers match this alias: set a default Provider on the Gateway or supply X-AliasPort-Provider")
+
+// RouteFor preserves existing callers. Requests without a provider selector
+// use the active Gateway's default Provider, when configured.
 func(s *Store)RouteFor(incoming string)(Route,error){
- var out Route
- err:=s.db.QueryRow(`SELECT g.client_hash,a.target,p.base_url,p.id,p.api_type
+ return s.RouteForProvider(incoming,"")
+}
+func(s *Store)RouteForProvider(incoming,providerSelector string)(Route,error){
+ var defaultID string
+ err:=s.db.QueryRow("SELECT default_provider_id FROM gateways WHERE active=1 LIMIT 1").Scan(&defaultID)
+ if errors.Is(err,sql.ErrNoRows){return Route{},ErrNotFound}
+ if err!=nil{return Route{},err}
+ chosen:=defaultID
+ if providerSelector!=""{
+  // Support either the stable Provider ID or a unique display name.
+  var ids []string
+  rows,e:=s.db.Query("SELECT id FROM providers WHERE id=? OR name=? ORDER BY CASE WHEN id=? THEN 0 ELSE 1 END",providerSelector,providerSelector,providerSelector)
+  if e!=nil{return Route{},e}
+  for rows.Next(){
+   var id string
+   if e=rows.Scan(&id);e!=nil{_ = rows.Close();return Route{},e}
+   ids=append(ids,id)
+  }
+  e=rows.Err();_ = rows.Close()
+  if e!=nil{return Route{},e}
+  if len(ids)==0{return Route{},ErrNotFound}
+  if len(ids)>1{return Route{},ErrAmbiguousProvider}
+  chosen=ids[0]
+ }
+ rows,err:=s.db.Query(`SELECT g.client_hash,a.target,p.base_url,p.id,p.api_type,a.incoming
  FROM gateways g JOIN aliases a ON a.gateway_id=g.id
  JOIN providers p ON p.id=a.provider_id
  WHERE g.active=1 AND a.enabled=1
    AND (a.incoming=? OR a.incoming='*')
- ORDER BY CASE WHEN a.incoming=? THEN 0 ELSE 1 END
- LIMIT 1`,incoming,incoming).
- Scan(&out.ClientHash,&out.Target,&out.BaseURL,&out.ProviderID,&out.ProviderType)
- if errors.Is(err,sql.ErrNoRows){return Route{},ErrNotFound}
+   AND (?='' OR a.provider_id=?)
+ ORDER BY CASE WHEN a.incoming=? THEN 0 ELSE 1 END, p.name, a.id
+ LIMIT 2`,incoming,chosen,chosen,incoming)
  if err!=nil{return Route{},err}
- return out,nil
+ defer rows.Close()
+ var route Route
+ var firstMatch string
+ if !rows.Next(){
+  if err=rows.Err();err!=nil{return Route{},err}
+  return Route{},ErrNotFound
+ }
+ if err=rows.Scan(&route.ClientHash,&route.Target,&route.BaseURL,&route.ProviderID,&route.ProviderType,&firstMatch);err!=nil{return Route{},err}
+ if rows.Next(){
+  var second Route
+  var secondMatch string
+  if err=rows.Scan(&second.ClientHash,&second.Target,&second.BaseURL,&second.ProviderID,&second.ProviderType,&secondMatch);err!=nil{return Route{},err}
+  if firstMatch==secondMatch{return Route{},ErrAmbiguousProvider}
+ }
+ if err=rows.Err();err!=nil{return Route{},err}
+ return route,nil
 }
 func(s *Store)ActiveModels()([]string,error){
  rows,e:=s.db.Query(`SELECT a.incoming FROM aliases a
  JOIN gateways g ON g.id=a.gateway_id
  WHERE g.active=1 AND a.enabled=1 AND a.incoming<>'*'
+   AND (g.default_provider_id='' OR a.provider_id=g.default_provider_id)
+ GROUP BY a.incoming
+ HAVING COUNT(*)=1
  ORDER BY a.incoming`)
- if e!=nil{return nil,e};defer rows.Close()
+ if e!=nil{return nil,e}
+ defer rows.Close()
  result:=[]string{}
- for rows.Next(){var name string;if e=rows.Scan(&name);e!=nil{return nil,e};result=append(result,name)}
+ for rows.Next(){
+  var name string
+  if e=rows.Scan(&name);e!=nil{return nil,e}
+  result=append(result,name)
+ }
  return result,rows.Err()
 }
 func(s *Store)LogEvent(incoming,target string,status int,duration time.Duration){
