@@ -70,7 +70,12 @@ func run(adminAddr,gatewayAddr string,launchBrowser bool) error {
  transport:=http.DefaultTransport.(*http.Transport).Clone()
  transport.MaxIdleConnsPerHost=30
  transport.ResponseHeaderTimeout=120*time.Second
- app:=&App{store:store,started:time.Now(),adminPort:adminAddr,gatewayPort:gatewayAddr,client:&http.Client{Transport:transport}}
+ // Never follow upstream redirects with an API key. A malicious redirect could
+ // otherwise forward a provider secret to an unrelated host.
+ app:=&App{store:store,started:time.Now(),adminPort:adminAddr,gatewayPort:gatewayAddr,client:&http.Client{
+  Transport:transport,
+  CheckRedirect:func(_ *http.Request,_ []*http.Request)error{return http.ErrUseLastResponse},
+ }}
  adminMux:=http.NewServeMux()
  staticFS,err:=fs.Sub(webAssets,"web");if err!=nil{return err}
  adminMux.Handle("/",http.FileServer(http.FS(staticFS)))
